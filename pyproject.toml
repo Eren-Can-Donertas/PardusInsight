@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pardusinsight"
+version = "0.1.0"
+description = "Pardus için salt-okunur sistem kaynağı izleme ve açıklanabilir darboğaz analizi"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    { name = "Eren Can Dönertaş" },
+    { name = "Yusuf Yankı Ütgün" },
+    { name = "Oğuz Giray Bori" },
+]
+dependencies = [
+    "psutil>=5.9",
+    "PySide6-Essentials>=6.5",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+pardusinsight = "pardusinsight.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["pardusinsight*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "linux: gerçek Linux /proc gerektirir",
+    "gui: PySide6 gerektirir (QT_QPA_PLATFORM=offscreen ile başsız çalışır)",
+]

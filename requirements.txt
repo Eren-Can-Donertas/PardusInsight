@@ -1,0 +1,4 @@
+# Çalışma zamanı bağımlılıkları (pip ile sanal ortamda kurulum için).
+# Pardus/Debian paketleriyle kurulum: docs/KURULUM.md
+psutil>=5.9        # BSD-3-Clause
+PySide6-Essentials>=6.5  # LGPLv3 / GPLv3 (Qt for Python)

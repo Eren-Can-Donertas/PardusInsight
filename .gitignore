@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+# Kullanıcı tarafından dışa aktarılan raporlar depoya girmesin
+pardusinsight_*.csv
+pardusinsight_*.json
+.pardusinsight-*.tmp
