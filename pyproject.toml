@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pardusinsight"
-version = "0.1.0"
+dynamic = ["version"]  # tek kaynak: pardusinsight/__init__.py (__version__)
 description = "Pardus için salt-okunur sistem kaynağı izleme ve açıklanabilir darboğaz analizi"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -17,12 +17,27 @@ dependencies = [
     "psutil>=5.9",
     "PySide6-Essentials>=6.5",
 ]
+classifiers = [
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: Education",
+    "Intended Audience :: End Users/Desktop",
+    "Natural Language :: Turkish",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Monitoring",
+]
+
+[project.urls]
+Homepage = "https://github.com/Eren-Can-Donertas/PardusInsight"
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+dev = ["pytest>=7", "coverage>=7"]
 
 [project.scripts]
 pardusinsight = "pardusinsight.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "pardusinsight.__version__" }
 
 [tool.setuptools.packages.find]
 include = ["pardusinsight*"]
@@ -34,3 +49,10 @@ markers = [
     "linux: gerçek Linux /proc gerektirir",
     "gui: PySide6 gerektirir (QT_QPA_PLATFORM=offscreen ile başsız çalışır)",
 ]
+
+[tool.coverage.run]
+source = ["pardusinsight"]
+omit = ["pardusinsight/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true

@@ -1,0 +1,19 @@
+Package: pardusinsight
+Version: @VERSION@
+Architecture: all
+Maintainer: Oğuz Giray Bori <259409737+oguzgiraybori@users.noreply.github.com>
+Installed-Size: @INSTALLED_SIZE@
+Depends: python3 (>= 3.9), python3-psutil (>= 5.9), python3-pyside6.qtcore (>= 6.5), python3-pyside6.qtgui (>= 6.5), python3-pyside6.qtwidgets (>= 6.5)
+Recommends: qt6-qpa-plugins
+Section: utils
+Priority: optional
+Homepage: https://github.com/Eren-Can-Donertas/PardusInsight
+Description: salt-okunur sistem kaynağı izleme ve açıklanabilir darboğaz analizi
+ PardusInsight; CPU, bellek, takas alanı (swap), sayfa hataları, disk G/Ç ve
+ süreç ölçümlerini standart kullanıcı yetkisiyle /proc ve psutil üzerinden
+ okur, son 30 dakikayı grafiklerde gösterir ve zaman pencereli üç kural
+ (bellek baskısı, kalıcı CPU yoğunluğu, disk G/Ç anomalisi) ile kanıtlı,
+ açıklamalı uyarılar üretir. Raporlar CSV ve JSON olarak dışa aktarılabilir.
+ .
+ Root yetkisi istemez; hiçbir süreci sonlandırmaz, sistem ayarı değiştirmez
+ ve ağ bağlantısı kurmaz. BİL461 İşletim Sistemleri ders projesidir.

@@ -1,0 +1,146 @@
+.TH PARDUSINSIGHT 1 2026-11-25 PardusInsight "Kullanıcı Komutları"
+.SH AD
+pardusinsight \- salt\-okunur sistem kaynağı izleme ve açıklanabilir darboğaz analizi
+.SH ÖZET
+.B pardusinsight
+[\fISEÇENEKLER\fR]
+.br
+.B pardusinsight \-\-headless
+[\fB\-\-duration\fR \fISN\fR] [\fB\-\-export\-json\fR \fIDOSYA\fR] [\fB\-\-export\-csv\fR \fIDOSYA\fR]
+.br
+.B pardusinsight
+[\fB\-\-headless\fR] \fB\-\-replay\fR \fIDOSYA\fR
+.br
+.B pardusinsight
+[\fB\-\-headless\fR] \fB\-\-synthetic\fR \fISENARYO\fR [\fB\-\-speed\fR \fIKAT\fR]
+.SH AÇIKLAMA
+.B PardusInsight
+CPU, bellek, takas alanı (swap), sayfa hataları, disk G/Ç ve süreç ölçümlerini
+standart kullanıcı yetkisiyle
+.I /proc
+ve psutil üzerinden okur, son 30 dakikayı grafiklerde gösterir ve üç kural
+üzerinden açıklamalı uyarılar üretir: bellek baskısı olasılığı, kalıcı CPU
+yoğunluğu ve disk G/Ç etkinliği anomalisi.
+.PP
+Her uyarı tetikleyici ve destekleyici metrikleri, kullanılan zaman aralığını,
+belirsizlikleri ve salt\-okunur önerileri gösterir. Uyarılar kesin arıza tanısı
+değildir; bir metriğin yavaşlamayla aynı anda görülmesi nedensellik kanıtı
+sayılmaz.
+.PP
+Seçeneksiz çalıştırıldığında grafik arayüz (PySide6) açılır ve canlı izleme
+2 saniye aralıkla başlar. Arayüz kullanılamıyorsa
+.B \-\-headless
+aynı analizi komut satırında sunar.
+.SH SEÇENEKLER
+.TP
+.BR \-h ", " \-\-help
+Yardım metnini gösterir ve çıkar.
+.TP
+.B \-\-version
+Sürüm bilgisini gösterir ve çıkar.
+.TP
+.BI \-\-interval " SN"
+Örnekleme aralığı, saniye (varsayılan 2; 0,2\-60 arası).
+.TP
+.BI \-\-history\-minutes " DK"
+Geçmiş tamponu süresi, dakika (varsayılan 30).
+.TP
+.BI \-\-window " SN"
+Analiz penceresi uzunluğu, saniye (varsayılan 30). Kurallar koşulun art arda
+iki pencerede sağlanmasını ister.
+.TP
+.BI \-\-process\-every " N"
+Süreç listesini her N örnekte bir toplar (varsayılan 1). Yükü azaltmak için
+kullanılır.
+.TP
+.BI \-\-config " DOSYA"
+Eşikleri ve ayarları JSON dosyasından okur. Dosya yalnızca okunur.
+.TP
+.BI \-\-synthetic " SENARYO"
+Gerçek sistem yerine sentetik veri kullanır (Linux gerekmez, sisteme yük
+bindirmez). Senaryolar için
+.BR \-\-list\-scenarios .
+.TP
+.BI \-\-replay " DOSYA"
+Kaydedilmiş JSON raporunu veya senaryoyu yükler ve kuralları geçerli
+ayarlarla yeniden çalıştırır.
+.TP
+.B \-\-list\-scenarios
+Sentetik senaryoları listeler.
+.TP
+.BI \-\-speed " KAT"
+Sentetik modda hızlandırma katsayısı (0 = beklemeden).
+.TP
+.BI \-\-seed " SAYI"
+Sentetik veri tohum değeri (varsayılan 461).
+.TP
+.B \-\-headless
+Grafik arayüz olmadan komut satırında izler.
+.TP
+.BI \-\-duration " SN"
+Headless modda toplam süre, saniye.
+.TP
+.BI \-\-ticks " SAYI"
+Headless modda alınacak örnek sayısı.
+.TP
+.B \-\-quiet
+Headless modda her örneği yazdırmaz; yalnızca uyarıları ve özeti yazar.
+.TP
+.BI \-\-export\-csv " DOSYA"
+Headless bitiminde örnekleri CSV dosyasına yazar; uyarılar
+.I DOSYA_uyarilar.csv
+dosyasına yazılır.
+.TP
+.BI \-\-export\-json " DOSYA"
+Headless bitiminde örnekleri, uyarıları ve ayarları içeren JSON rapor yazar.
+.SH GÜVENLİK SINIRLARI
+Root yetkisi istemez; root ile başlatılırsa yalnızca bilgi uyarısı verir.
+.I /proc
+ve
+.I /sys
+yalnızca okunur. Süreç sonlandırma, sinyal gönderme, öncelik değiştirme,
+çekirdek modülü veya stres testi yoktur. Ağ bağlantısı kurulmaz. Dosya
+yalnızca kullanıcı dışa aktarma istediğinde, seçtiği yola yazılır; raporlarda
+kullanıcı adı ve makine adı bulunmaz.
+.SH DOSYALAR
+.TP
+.I /usr/share/pardusinsight/scenarios/
+Önceden kaydedilmiş sentetik senaryolar (ör.
+.IR demo.json ).
+Arayüzdeki "Kayıt/senaryo aç" penceresi bu klasörde açılır.
+.TP
+.I /usr/share/doc/pardusinsight/
+Kullanım kılavuzu, kural açıklamaları ve telif bilgisi.
+.SH ÇIKIŞ DURUMU
+.TP
+.B 0
+Başarılı.
+.TP
+.B 1
+Kayıt dosyası okunamadı veya dışa aktarma başarısız oldu.
+.TP
+.B 2
+Geçersiz argüman veya ayar, bilinmeyen senaryo ya da canlı izlemenin
+desteklenmediği platform.
+.TP
+.B 3
+PySide6 yüklenemedi (grafik arayüz başlatılamadı).
+.SH ÖRNEKLER
+.TP
+.B pardusinsight
+Canlı izleme (grafik arayüz).
+.TP
+.B pardusinsight \-\-headless \-\-duration 1800 \-\-export\-json normal.json
+30 dakikalık kayıt alır (eşik kalibrasyonu için).
+.TP
+.B pardusinsight \-\-replay /usr/share/pardusinsight/scenarios/demo.json
+Hazır demo senaryosunu analiz eder.
+.TP
+.B pardusinsight \-\-synthetic demo \-\-speed 4
+Uyarıların canlı oluşumunu sentetik veriyle gösterir.
+.SH YAZARLAR
+Eren Can Dönertaş, Yusuf Yankı Ütgün, Oğuz Giray Bori (BİL461 İşletim Sistemleri).
+.SH AYRICA BAKINIZ
+.BR proc (5),
+.BR top (1),
+.BR htop (1)

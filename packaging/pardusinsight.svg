@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>PardusInsight</title>
+  <defs>
+    <linearGradient id="arkaplan" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a78d6"/>
+      <stop offset="1" stop-color="#174a8c"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="116" height="116" rx="24" fill="url(#arkaplan)"/>
+  <path d="M22 98 H106 M22 76 H106 M22 54 H106 M22 32 H106" stroke="#ffffff" stroke-opacity="0.16" stroke-width="2"/>
+  <polyline points="22,84 36,78 48,86 60,58 72,66 86,34 104,42" fill="none" stroke="#ffffff"
+            stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="86" cy="34" r="6" fill="#ffffff"/>
+  <circle cx="80" cy="86" r="15" fill="#ffffff" fill-opacity="0.18" stroke="#eb6834" stroke-width="6"/>
+  <line x1="91" y1="97" x2="103" y2="109" stroke="#eb6834" stroke-width="9" stroke-linecap="round"/>
+</svg>

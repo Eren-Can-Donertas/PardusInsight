@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=PardusInsight
+GenericName=Sistem Kaynağı İzleyici
+GenericName[en]=System Resource Monitor
+Comment=Salt-okunur kaynak izleme ve açıklanabilir darboğaz analizi
+Comment[en]=Read-only resource monitoring with explainable bottleneck analysis
+Exec=pardusinsight
+Icon=pardusinsight
+Terminal=false
+Categories=System;Monitor;
+Keywords=cpu;ram;bellek;swap;disk;süreç;izleme;performans;darboğaz;
+Keywords[en]=cpu;memory;swap;disk;process;monitor;performance;bottleneck;
+StartupNotify=true

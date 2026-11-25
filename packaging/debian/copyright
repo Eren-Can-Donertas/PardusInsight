@@ -1,0 +1,22 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: PardusInsight
+Upstream-Contact: Eren Can Dönertaş, Yusuf Yankı Ütgün, Oğuz Giray Bori
+Source: https://github.com/Eren-Can-Donertas/PardusInsight
+
+Files: *
+Copyright: 2026 Eren Can Dönertaş
+           2026 Yusuf Yankı Ütgün
+           2026 Oğuz Giray Bori
+License: LicenseRef-PardusInsight-Ekip
+
+License: LicenseRef-PardusInsight-Ekip
+ Proje ekibi henüz bir açık kaynak lisansı seçmemiştir (bkz. README.md,
+ "Lisanslar ve atıflar"). Lisans seçilene kadar tüm haklar yazarlarına
+ aittir; bu paket BİL461 dersi kapsamında değerlendirme ve deneme amacıyla
+ dağıtılır. Ekip bir lisans seçtiğinde bu dosya ve pyproject.toml
+ güncellenmelidir.
+ .
+ Paket üçüncü taraf kaynak kodu içermez. Çalışma zamanı bağımlılıkları
+ (python3, python3-psutil, python3-pyside6.*) ayrı Pardus/Debian paketleri
+ olarak kendi lisanslarıyla kurulur; ayrıntılar: THIRD_PARTY_NOTICES.md
+ (psutil: BSD-3-Clause, Qt for Python/PySide6: LGPL-3.0, Python: PSF).

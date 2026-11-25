@@ -1,0 +1,4 @@
+# Kabuk betikleri ve Debian paketleme dosyaları her platformda LF satır sonuyla
+# kalmalı; CRLF'li bir postinst veya .sh dosyası Linux'ta çalışmaz.
+*.sh            text eol=lf
+packaging/**    text eol=lf
