@@ -14,10 +14,12 @@ beklenir."
 | **Yusuf Yankı Ütgün** | `pardusinsight/ui/` | Ana pencere, grafikler, süreç tablosu, uyarı kartları, ayarlar, worker | `tests/test_gui.py` |
 | | `pardusinsight/export/`, `core/formatting.py`, `analysis/explain.py` | CSV/JSON raporları, Türkçe biçimlendirme, uyarı metinleri | `tests/test_export.py` |
 | | `docs/KULLANIM.md`, `docs/DEMO.md`, `docs/RAPOR_FORMATI.md` | Kullanıcı rehberi ve demo | — |
-| **Oğuz Giray Bori** | `pardusinsight/analysis/` (rules, engine, windows) , `config.py` | 3 kural, kural motoru, eşikler | `tests/test_rules.py`, `tests/test_engine.py` |
-| | `pardusinsight/collectors/synthetic.py`, `scenarios/`, `scripts/generate_scenarios.py` | Sentetik senaryolar | `tests/test_scenarios_service.py` |
-| | `tests/`, `pyproject.toml`, `cli.py`, `scripts/perf_check.py`, `scripts/install_user.sh` | Test otomasyonu, paketleme, komut satırı | `tests/test_cli_safety.py` |
-| | `docs/TEST_RAPORU.md`, `docs/PARDUS_DOGRULAMA.md`, `docs/KURULUM.md` | Test raporu, Pardus kabul listesi | — |
+| **Oğuz Giray Bori** | `pardusinsight/analysis/` (rules, engine, windows, calibration) , `config.py` | 3 kural, kural motoru, zaman pencereleri, eşikler ve kalibrasyon | `tests/test_rules.py`, `tests/test_engine.py`, `tests/test_windows.py`, `tests/test_config.py`, `tests/test_calibration.py` |
+| | `pardusinsight/collectors/synthetic.py`, `scenarios/`, `scripts/generate_scenarios.py` | Sentetik senaryolar (her kural için pozitif + karşı-örnek) | `tests/test_scenarios_service.py` |
+| | `tests/`, `.github/workflows/ci.yml`, `pyproject.toml`, `cli.py`, `scripts/perf_check.py`, `scripts/install_user.sh` | Test otomasyonu (CI: Ubuntu, Windows, resmî Pardus 25.1 kapsayıcısı), komut satırı | `tests/test_cli_safety.py` |
+| | `packaging/`, `scripts/build_deb.py`, `Makefile` | Pardus/Debian `.deb` paketi | `tests/test_packaging.py` |
+| | `scripts/kalibrasyon.py`, `scripts/pardus_kabul.py` | Eşik kalibrasyonu ve Pardus kabul listesinin otomasyonu | `tests/test_calibration.py`, `tests/test_pardus_kabul.py` |
+| | `docs/TEST_RAPORU.md`, `docs/PARDUS_DOGRULAMA.md`, `docs/KURULUM.md`, `docs/PAKETLEME.md`, `docs/KALIBRASYON_SENTETIK.md` | Test raporu, Pardus kabul listesi, kurulum ve paketleme | — |
 | Ortak | `README.md`, `docs/MIMARI.md`, `docs/KURALLAR.md` | Teknik kararların kaydı | — |
 
 ## Git geçmişi hakkında
