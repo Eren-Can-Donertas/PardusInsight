@@ -12,6 +12,7 @@ Kullanım:
 """
 import argparse
 import os
+import statistics
 import sys
 import time
 
@@ -33,7 +34,7 @@ def make_service(args):
 
 def report(label, cpu_total_s, wall_s, rss_values, tick_ms, extra=""):
     ncpu = os.cpu_count() or 1
-    single = cpu_total_s / wall_s * 100.0
+    single = cpu_total_s / wall_s * 100.0 if wall_s > 0 else 0.0
     print(f"\n== {label} ==")
     print(f"Süre: {wall_s:.1f} sn · tur sayısı: {len(tick_ms)}")
     print(f"Ortalama CPU: %{single:.2f} (tek çekirdek = %100) · "
@@ -42,16 +43,19 @@ def report(label, cpu_total_s, wall_s, rss_values, tick_ms, extra=""):
         print(f"RSS: başlangıç {rss_values[0] / MIB:.1f} MiB · en yüksek "
               f"{max(rss_values) / MIB:.1f} MiB · son {rss_values[-1] / MIB:.1f} MiB")
     if tick_ms:
-        ordered = sorted(tick_ms)
-        print(f"Tur süresi: medyan {ordered[len(ordered) // 2]:.1f} ms · en yüksek "
-              f"{ordered[-1]:.1f} ms")
+        print(f"Tur süresi: medyan {statistics.median(tick_ms):.1f} ms · en yüksek "
+              f"{max(tick_ms):.1f} ms")
     if extra:
         print(extra)
-    ok_cpu = single < 5.0
+    # Hiç tur ölçülmediyse (ör. --duration 0) CPU hedefi için hüküm verilemez
+    ok_cpu = (single < 5.0) if tick_ms and wall_s > 0 else None
     ok_rss = (max(rss_values) / MIB < 200.0) if rss_values else None
-    print(f"Hedef CPU < %5 (tek çekirdek): {'SAĞLANDI' if ok_cpu else 'SAĞLANMADI'} · "
-          f"Hedef RAM < 200 MiB: "
-          f"{'ölçülemedi' if ok_rss is None else ('SAĞLANDI' if ok_rss else 'SAĞLANMADI')}")
+
+    def verdict(ok):
+        return "ölçülemedi" if ok is None else ("SAĞLANDI" if ok else "SAĞLANMADI")
+
+    print(f"Hedef CPU < %5 (tek çekirdek): {verdict(ok_cpu)} · "
+          f"Hedef RAM < 200 MiB: {verdict(ok_rss)}")
 
 
 def run_headless(args) -> int:
@@ -92,9 +96,10 @@ def run_gui(args) -> int:
         now = clock.elapsed()
         gaps.append(now - last[0])
         last[0] = now
-        value = SelfUsageMonitor.rss_bytes()
-        if value and len(gaps) % 50 == 0:
-            rss.append(value)
+        if len(gaps) % 50 == 0:  # /proc/self/status'u saniyede 50 kez okumamak için
+            value = SelfUsageMonitor.rss_bytes()
+            if value:
+                rss.append(value)
 
     beat = QTimer()
     beat.timeout.connect(heartbeat)

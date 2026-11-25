@@ -20,7 +20,16 @@ fi
 if [ -x "$APP_DIR/.venv/bin/python" ]; then
     PYTHON="$APP_DIR/.venv/bin/python"
 else
-    PYTHON="$(command -v python3)"
+    PYTHON="$(command -v python3 || true)"
+fi
+if [ -z "$PYTHON" ]; then
+    echo "python3 bulunamadı: önce 'sudo apt install python3' ile kurun veya .venv oluşturun" \
+         "(docs/KURULUM.md)." >&2
+    exit 1
+fi
+if ! "$PYTHON" -c 'import psutil, PySide6.QtWidgets' 2>/dev/null; then
+    echo "Uyarı: $PYTHON ile psutil/PySide6 içe aktarılamadı; menüden açılmayabilir" \
+         "(docs/KURULUM.md seçenek A/B)." >&2
 fi
 
 mkdir -p "$TARGET_DIR" "$ICON_DIR"
