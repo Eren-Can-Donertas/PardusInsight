@@ -81,6 +81,10 @@ jobs:
           - { surum: "25 (son)", imaj: "pardus/yirmibes:latest" }
     container:
       image: ${{ matrix.imaj }}
+      # Minimal imajda ca-certificates yok; GitHub sunucusunun güvenilir CA paketi
+      # yalnızca ilk ca-certificates kurulumunda kullanılmak üzere salt-okunur bağlanır.
+      volumes:
+        - /etc/ssl/certs/ca-certificates.crt:/opt/ci/sunucu-ca.crt:ro
     env:
       DEBIAN_FRONTEND: noninteractive
       QT_QPA_PLATFORM: offscreen
@@ -99,7 +103,13 @@ jobs:
           set +e
           cat /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null | grep -v '^#' | grep . > apt-kaynaklar.txt
           echo "::notice title=apt kaynakları ${{ matrix.surum }}::$(sed -e ':a;N;$!ba;s/\n/ | /g' apt-kaynaklar.txt)"
-          apt-get -o Acquire::Retries=3 update > apt.log 2>&1 || exit 1
+          # Depo HTTP isteğini HTTPS aynasına yönlendiriyor; imajda CA sertifikaları
+          # olmadığından ilk güncelleme ve ca-certificates kurulumu sunucunun CA paketiyle
+          # (TLS doğrulaması açık) yapılır, sonrası imajın kendi sertifikalarıyla.
+          HOSTCA="-o Acquire::https::CaInfo=/opt/ci/sunucu-ca.crt"
+          apt-get -o Acquire::Retries=3 $HOSTCA update > apt.log 2>&1 || exit 1
+          apt-get $HOSTCA install -y -q --no-install-recommends ca-certificates >> apt.log 2>&1 || exit 1
+          apt-get -o Acquire::Retries=3 --error-on=any update >> apt.log 2>&1 || exit 1
           apt-cache policy python3 python3-psutil python3-pyside6.qtcore python3-pyside6.qtgui \
             python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest > apt-policy.txt 2>&1
           apt-get install -y -q --no-install-recommends ca-certificates git \
