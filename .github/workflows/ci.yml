@@ -40,8 +40,8 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
           cache: pip
@@ -96,16 +96,29 @@ jobs:
           echo "::notice title=Pardus imaji ${{ matrix.surum }}::${{ matrix.imaj }} = $(. /etc/os-release; echo "$PRETTY_NAME (VERSION_ID=$VERSION_ID)"), çekirdek $(uname -r)"
       - name: Pardus deposundan bağımlılıklar (KURULUM.md seçenek A)
         run: |
-          apt-get update -q
+          # Ayrıntılı günlükler yalnızca oturum açmış kullanıcılara açık olduğundan
+          # apt hataları iş notu (annotation) olarak da yazılır.
+          not_yaz() { printf '::%s title=%s::%s\n' "$1" "$2" "$(sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g')"; }
+          cat /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null | grep -v '^#' | grep . | not_yaz notice "apt kaynakları ${{ matrix.surum }}"
+          set +e
+          apt-get -o Acquire::Retries=3 update > apt.log 2>&1
+          rc=$?
+          if [ $rc -ne 0 ]; then tail -n 25 apt.log | not_yaz error "apt-get update"; exit $rc; fi
           apt-cache policy python3 python3-psutil python3-pyside6.qtcore python3-pyside6.qtgui \
             python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest | tee apt-policy.txt
           apt-get install -y -q --no-install-recommends ca-certificates git \
             python3 python3-psutil python3-pyside6.qtcore python3-pyside6.qtgui \
-            python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest fonts-dejavu-core
+            python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest fonts-dejavu-core > apt.log 2>&1
+          rc=$?
+          if [ $rc -ne 0 ]; then
+            { tail -n 25 apt.log; echo "--- policy ---"; cat apt-policy.txt; } | not_yaz error "apt-get install"
+            exit $rc
+          fi
+          set -e
           PYSIDE=$(python3 -c 'import PySide6; print(PySide6.__version__)')
           PSUTIL=$(python3 -c 'import psutil; print(psutil.__version__)')
           echo "::notice title=Pardus paketleri ${{ matrix.surum }}::Python $(python3 -c 'import platform; print(platform.python_version())'), PySide6 $PYSIDE, psutil $PSUTIL"
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Standart (root olmayan, sudo yetkisiz) kullanıcı
         run: |
           useradd --create-home --shell /bin/bash ogrenci
@@ -172,7 +185,7 @@ jobs:
           echo "::notice title=Paket Pardus ${{ matrix.surum }}::apt ile kuruldu, standart kullanıcıyla çalıştı, kaldırıldı; artık dosya yok"
       - name: Çıktıları sakla
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: pardus-${{ strategy.job-index }}-sonuclar
           path: |
