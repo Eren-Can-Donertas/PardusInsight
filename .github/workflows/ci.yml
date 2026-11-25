@@ -1,0 +1,181 @@
+# PardusInsight sürekli entegrasyon (test otomasyonu).
+#
+#  * pip:    Ubuntu (Python 3.9 ve 3.13) ve Windows üzerinde tüm testler + kapsam,
+#            Python tekerleğinin kurulup çalıştırılması.
+#  * pardus: Resmî Pardus 25 kapsayıcısında (Docker Hub: pardus/yirmibes) Pardus
+#            deposundaki paketlerle (KURULUM.md seçenek A) testlerin STANDART
+#            KULLANICIYLA çalıştırılması, /proc–psutil doğrulaması, performans
+#            ölçümü, .deb paketinin apt ile kurulup denenmesi ve kaldırılması.
+#            Not: Kapsayıcı Pardus kullanıcı alanını sağlar; çekirdek GitHub
+#            sunucusunundur ve masaüstü oturumu yoktur (bkz. docs/PARDUS_DOGRULAMA.md).
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pip:
+    name: Python ${{ matrix.python }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, python: "3.9" }
+          - { os: ubuntu-24.04, python: "3.13" }
+          - { os: windows-latest, python: "3.13" }
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Qt için sistem kütüphaneleri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - name: Bağımlılıklar
+        run: python -m pip install -r requirements-dev.txt coverage build
+      - name: Testler (kapsam ölçümüyle)
+        run: |
+          python -m coverage run -m pytest -q -rs | tee pytest.txt
+          echo "::notice title=pytest ${{ matrix.os }} py${{ matrix.python }}::$(tail -n 1 pytest.txt)"
+      - name: Kapsam raporu
+        run: |
+          python -m coverage report | tee coverage.txt
+          echo "::notice title=kapsam ${{ matrix.os }} py${{ matrix.python }}::$(tail -n 1 coverage.txt)"
+      - name: Python tekerleği oluştur, kur ve çalıştır
+        run: |
+          python -m build
+          python -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          pardusinsight --version
+          pardusinsight --headless --synthetic cpu --speed 0 --ticks 120 --quiet | tail -n 3
+
+  pardus:
+    name: Pardus ${{ matrix.surum }} kapsayıcısı
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { surum: "25.1", imaj: "pardus/yirmibes:1" }
+          - { surum: "25 (son)", imaj: "pardus/yirmibes:latest" }
+    container:
+      image: ${{ matrix.imaj }}
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      QT_QPA_PLATFORM: offscreen
+      LANG: C.UTF-8
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Sürüm bilgisi
+        run: |
+          cat /etc/os-release
+          uname -r
+          echo "::notice title=Pardus imaji ${{ matrix.surum }}::${{ matrix.imaj }} = $(. /etc/os-release; echo "$PRETTY_NAME (VERSION_ID=$VERSION_ID)"), çekirdek $(uname -r)"
+      - name: Pardus deposundan bağımlılıklar (KURULUM.md seçenek A)
+        run: |
+          apt-get update -q
+          apt-cache policy python3 python3-psutil python3-pyside6.qtcore python3-pyside6.qtgui \
+            python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest | tee apt-policy.txt
+          apt-get install -y -q --no-install-recommends ca-certificates git \
+            python3 python3-psutil python3-pyside6.qtcore python3-pyside6.qtgui \
+            python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest fonts-dejavu-core
+          PYSIDE=$(python3 -c 'import PySide6; print(PySide6.__version__)')
+          PSUTIL=$(python3 -c 'import psutil; print(psutil.__version__)')
+          echo "::notice title=Pardus paketleri ${{ matrix.surum }}::Python $(python3 -c 'import platform; print(platform.python_version())'), PySide6 $PYSIDE, psutil $PSUTIL"
+      - uses: actions/checkout@v4
+      - name: Standart (root olmayan, sudo yetkisiz) kullanıcı
+        run: |
+          useradd --create-home --shell /bin/bash ogrenci
+          chown -R ogrenci:ogrenci "$GITHUB_WORKSPACE"
+          runuser -u ogrenci -- id
+      - name: Testler (standart kullanıcıyla)
+        run: |
+          runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 -m pytest -q -rs | tee pytest.txt
+          echo "::notice title=pytest Pardus ${{ matrix.surum }}::$(tail -n 1 pytest.txt)"
+      - name: /proc – psutil doğrulama tablosu (10 örnek)
+        run: |
+          runuser -u ogrenci -- python3 scripts/validate_metrics.py --rounds 10 --interval 1 | tee dogrulama.txt
+          echo "::notice title=Doğrulama Pardus ${{ matrix.surum }}::$(grep 'En büyük farklar' dogrulama.txt)"
+      - name: Performans (GUI'siz ve GUI, 60 sn)
+        run: |
+          runuser -u ogrenci -- python3 scripts/perf_check.py --duration 60 | tee perf.txt
+          runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 scripts/perf_check.py --gui --duration 60 | tee -a perf.txt
+          echo "::notice title=Performans Pardus ${{ matrix.surum }}::$(grep -E 'Ortalama CPU|RSS|Hedef|Olay' perf.txt | tr '\n' ' ')"
+      - name: .deb paketini oluştur ve incele
+        run: |
+          apt-get install -y -q --no-install-recommends desktop-file-utils
+          python3 scripts/build_deb.py --cikti dist
+          dpkg-deb --info dist/pardusinsight_*_all.deb
+          dpkg-deb --contents dist/pardusinsight_*_all.deb
+          desktop-file-validate packaging/pardusinsight.desktop
+      - name: lintian
+        run: |
+          apt-get install -y -q --no-install-recommends lintian
+          lintian --info --fail-on error dist/pardusinsight_*_all.deb | tee lintian.txt
+          echo "::notice title=lintian Pardus ${{ matrix.surum }}::$(grep -cE '^[EW]:' lintian.txt || true) hata/uyarı satırı"
+      - name: .deb kurulumu (apt, bağımlılıklar Pardus deposundan)
+        run: |
+          apt-get install -y -q ./dist/pardusinsight_*_all.deb
+          dpkg -s pardusinsight | grep -E '^(Status|Version)'
+          test -x /usr/bin/pardusinsight
+          test -f /usr/share/pardusinsight/scenarios/demo.json
+          find /usr/share/pardusinsight -name '*.pyc' | head -n 3
+      - name: Kurulu uygulama standart kullanıcıyla
+        run: |
+          cd /tmp
+          runuser -u ogrenci -- pardusinsight --version
+          runuser -u ogrenci -- pardusinsight --headless --ticks 5 --interval 1 | tee canli.txt
+          if grep -q "okunamadı" canli.txt; then echo "/proc okuma hatası" >&2; exit 1; fi
+          runuser -u ogrenci -- pardusinsight --headless --replay /usr/share/pardusinsight/scenarios/demo.json | tee demo.txt
+          grep -q "Kalıcı CPU yoğunluğu" demo.txt
+          grep -q "Bellek baskısı olasılığı" demo.txt
+          grep -q "Disk G/Ç etkinliği anomalisi" demo.txt
+      - name: GUI gerçek X11 (xcb) altında açılıyor mu (xvfb)
+        run: |
+          apt-get install -y -q --no-install-recommends xvfb xauth
+          cd /tmp
+          rc=0
+          runuser -u ogrenci -- env -u QT_QPA_PLATFORM xvfb-run -a -s "-screen 0 1280x800x24" \
+            timeout 20 pardusinsight --synthetic demo --speed 4 || rc=$?
+          echo "çıkış kodu: $rc (124 = 20 sn boyunca açık kaldı, zaman aşımıyla kapatıldı)"
+          test "$rc" -eq 124
+          echo "::notice title=GUI xcb Pardus ${{ matrix.surum }}::Arayüz xvfb altında 20 sn çökmeden çalıştı"
+      - name: Kaldırma ve artık dosya denetimi
+        run: |
+          apt-get purge -y -q pardusinsight
+          test ! -e /usr/bin/pardusinsight
+          test ! -e /usr/share/pardusinsight
+          test ! -e /usr/share/applications/pardusinsight.desktop
+          echo "::notice title=Paket Pardus ${{ matrix.surum }}::apt ile kuruldu, standart kullanıcıyla çalıştı, kaldırıldı; artık dosya yok"
+      - name: Çıktıları sakla
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pardus-${{ strategy.job-index }}-sonuclar
+          path: |
+            dist/*.deb
+            *.txt
+          if-no-files-found: ignore
