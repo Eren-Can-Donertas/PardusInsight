@@ -96,93 +96,99 @@ jobs:
           echo "::notice title=Pardus imaji ${{ matrix.surum }}::${{ matrix.imaj }} = $(. /etc/os-release; echo "$PRETTY_NAME (VERSION_ID=$VERSION_ID)"), çekirdek $(uname -r)"
       - name: Pardus deposundan bağımlılıklar (KURULUM.md seçenek A)
         run: |
-          # Ayrıntılı günlükler yalnızca oturum açmış kullanıcılara açık olduğundan
-          # apt hataları iş notu (annotation) olarak da yazılır.
-          not_yaz() { printf '::%s title=%s::%s\n' "$1" "$2" "$(sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g')"; }
-          cat /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null | grep -v '^#' | grep . | not_yaz notice "apt kaynakları ${{ matrix.surum }}"
           set +e
-          apt-get -o Acquire::Retries=3 update > apt.log 2>&1
-          rc=$?
-          if [ $rc -ne 0 ]; then tail -n 25 apt.log | not_yaz error "apt-get update"; exit $rc; fi
+          cat /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null | grep -v '^#' | grep . > apt-kaynaklar.txt
+          echo "::notice title=apt kaynakları ${{ matrix.surum }}::$(sed -e ':a;N;$!ba;s/\n/ | /g' apt-kaynaklar.txt)"
+          apt-get -o Acquire::Retries=3 update > apt.log 2>&1 || exit 1
           apt-cache policy python3 python3-psutil python3-pyside6.qtcore python3-pyside6.qtgui \
-            python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest | tee apt-policy.txt
+            python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest > apt-policy.txt 2>&1
           apt-get install -y -q --no-install-recommends ca-certificates git \
             python3 python3-psutil python3-pyside6.qtcore python3-pyside6.qtgui \
-            python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest fonts-dejavu-core > apt.log 2>&1
-          rc=$?
-          if [ $rc -ne 0 ]; then
-            { tail -n 25 apt.log; echo "--- policy ---"; cat apt-policy.txt; } | not_yaz error "apt-get install"
-            exit $rc
-          fi
-          set -e
-          PYSIDE=$(python3 -c 'import PySide6; print(PySide6.__version__)')
-          PSUTIL=$(python3 -c 'import psutil; print(psutil.__version__)')
-          echo "::notice title=Pardus paketleri ${{ matrix.surum }}::Python $(python3 -c 'import platform; print(platform.python_version())'), PySide6 $PYSIDE, psutil $PSUTIL"
+            python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest fonts-dejavu-core \
+            >> apt.log 2>&1 || exit 1
+          python3 -c 'import platform, psutil, PySide6; print(f"Python {platform.python_version()}, PySide6 {PySide6.__version__}, psutil {psutil.__version__}")' > surumler.txt 2>&1 || exit 1
+          echo "::notice title=Pardus paketleri ${{ matrix.surum }}::$(cat surumler.txt)"
       - uses: actions/checkout@v5
+        with:
+          path: kaynak
       - name: Standart (root olmayan, sudo yetkisiz) kullanıcı
         run: |
           useradd --create-home --shell /bin/bash ogrenci
-          chown -R ogrenci:ogrenci "$GITHUB_WORKSPACE"
+          chown -R ogrenci:ogrenci "$GITHUB_WORKSPACE/kaynak"
           runuser -u ogrenci -- id
       - name: Testler (standart kullanıcıyla)
+        working-directory: kaynak
         run: |
-          runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 -m pytest -q -rs | tee pytest.txt
-          echo "::notice title=pytest Pardus ${{ matrix.surum }}::$(tail -n 1 pytest.txt)"
+          runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 -m pytest -q -rs 2>&1 | tee ../pytest.txt
+          echo "::notice title=pytest Pardus ${{ matrix.surum }}::$(tail -n 1 ../pytest.txt)"
       - name: /proc – psutil doğrulama tablosu (10 örnek)
+        working-directory: kaynak
         run: |
-          runuser -u ogrenci -- python3 scripts/validate_metrics.py --rounds 10 --interval 1 | tee dogrulama.txt
-          echo "::notice title=Doğrulama Pardus ${{ matrix.surum }}::$(grep 'En büyük farklar' dogrulama.txt)"
+          runuser -u ogrenci -- python3 scripts/validate_metrics.py --rounds 10 --interval 1 2>&1 | tee ../dogrulama.txt
+          echo "::notice title=Doğrulama Pardus ${{ matrix.surum }}::$(grep 'En büyük farklar' ../dogrulama.txt)"
       - name: Performans (GUI'siz ve GUI, 60 sn)
+        working-directory: kaynak
         run: |
-          runuser -u ogrenci -- python3 scripts/perf_check.py --duration 60 | tee perf.txt
-          runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 scripts/perf_check.py --gui --duration 60 | tee -a perf.txt
-          echo "::notice title=Performans Pardus ${{ matrix.surum }}::$(grep -E 'Ortalama CPU|RSS|Hedef|Olay' perf.txt | tr '\n' ' ')"
+          runuser -u ogrenci -- python3 scripts/perf_check.py --duration 60 2>&1 | tee ../perf.txt
+          runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 scripts/perf_check.py --gui --duration 60 2>&1 | tee -a ../perf.txt
+          echo "::notice title=Performans Pardus ${{ matrix.surum }}::$(grep -E 'Ortalama CPU|RSS|Hedef|Olay' ../perf.txt | tr '\n' ' ')"
       - name: .deb paketini oluştur ve incele
+        working-directory: kaynak
         run: |
-          apt-get install -y -q --no-install-recommends desktop-file-utils
-          python3 scripts/build_deb.py --cikti dist
-          dpkg-deb --info dist/pardusinsight_*_all.deb
-          dpkg-deb --contents dist/pardusinsight_*_all.deb
-          desktop-file-validate packaging/pardusinsight.desktop
+          apt-get install -y -q --no-install-recommends desktop-file-utils > ../deb.txt 2>&1
+          python3 scripts/build_deb.py --cikti ../dist 2>&1 | tee -a ../deb.txt
+          dpkg-deb --info ../dist/pardusinsight_*_all.deb 2>&1 | tee -a ../deb.txt
+          dpkg-deb --contents ../dist/pardusinsight_*_all.deb 2>&1 | tee -a ../deb.txt
+          desktop-file-validate packaging/pardusinsight.desktop 2>&1 | tee -a ../deb.txt
       - name: lintian
         run: |
-          apt-get install -y -q --no-install-recommends lintian
-          lintian --info --fail-on error dist/pardusinsight_*_all.deb | tee lintian.txt
-          echo "::notice title=lintian Pardus ${{ matrix.surum }}::$(grep -cE '^[EW]:' lintian.txt || true) hata/uyarı satırı"
+          apt-get install -y -q --no-install-recommends lintian > lintian-kurulum.log 2>&1
+          lintian --info --fail-on error dist/pardusinsight_*_all.deb 2>&1 | tee lintian.txt
+          echo "::notice title=lintian Pardus ${{ matrix.surum }}::$(grep -cE '^[EW]:' lintian.txt || true) hata/uyarı satırı; $(grep -E '^[EW]:' lintian.txt | head -n 5 | tr '\n' ' ')"
       - name: .deb kurulumu (apt, bağımlılıklar Pardus deposundan)
         run: |
-          apt-get install -y -q ./dist/pardusinsight_*_all.deb
-          dpkg -s pardusinsight | grep -E '^(Status|Version)'
+          apt-get install -y -q ./dist/pardusinsight_*_all.deb 2>&1 | tee kurulum.txt
+          dpkg -s pardusinsight | grep -E '^(Status|Version)' | tee -a kurulum.txt
           test -x /usr/bin/pardusinsight
           test -f /usr/share/pardusinsight/scenarios/demo.json
-          find /usr/share/pardusinsight -name '*.pyc' | head -n 3
+          find /usr/share/pardusinsight -name '*.pyc' | wc -l | tee -a kurulum.txt
       - name: Kurulu uygulama standart kullanıcıyla
         run: |
+          OUT="$GITHUB_WORKSPACE"
           cd /tmp
-          runuser -u ogrenci -- pardusinsight --version
-          runuser -u ogrenci -- pardusinsight --headless --ticks 5 --interval 1 | tee canli.txt
-          if grep -q "okunamadı" canli.txt; then echo "/proc okuma hatası" >&2; exit 1; fi
-          runuser -u ogrenci -- pardusinsight --headless --replay /usr/share/pardusinsight/scenarios/demo.json | tee demo.txt
-          grep -q "Kalıcı CPU yoğunluğu" demo.txt
-          grep -q "Bellek baskısı olasılığı" demo.txt
-          grep -q "Disk G/Ç etkinliği anomalisi" demo.txt
+          runuser -u ogrenci -- pardusinsight --version 2>&1 | tee "$OUT/kurulu.txt"
+          runuser -u ogrenci -- pardusinsight --headless --ticks 5 --interval 1 2>&1 | tee -a "$OUT/kurulu.txt"
+          if grep -q "okunamadı" "$OUT/kurulu.txt"; then echo "/proc okuma hatası" >&2; exit 1; fi
+          runuser -u ogrenci -- pardusinsight --headless --replay /usr/share/pardusinsight/scenarios/demo.json 2>&1 | tee "$OUT/demo.txt"
+          grep -q "Kalıcı CPU yoğunluğu" "$OUT/demo.txt"
+          grep -q "Bellek baskısı olasılığı" "$OUT/demo.txt"
+          grep -q "Disk G/Ç etkinliği anomalisi" "$OUT/demo.txt"
       - name: GUI gerçek X11 (xcb) altında açılıyor mu (xvfb)
         run: |
-          apt-get install -y -q --no-install-recommends xvfb xauth
+          OUT="$GITHUB_WORKSPACE"
+          apt-get install -y -q --no-install-recommends xvfb xauth > "$OUT/xvfb-kurulum.log" 2>&1
           cd /tmp
           rc=0
           runuser -u ogrenci -- env -u QT_QPA_PLATFORM xvfb-run -a -s "-screen 0 1280x800x24" \
-            timeout 20 pardusinsight --synthetic demo --speed 4 || rc=$?
-          echo "çıkış kodu: $rc (124 = 20 sn boyunca açık kaldı, zaman aşımıyla kapatıldı)"
+            timeout 20 pardusinsight --synthetic demo --speed 4 > "$OUT/gui.txt" 2>&1 || rc=$?
+          echo "çıkış kodu: $rc (124 = 20 sn boyunca açık kaldı, zaman aşımıyla kapatıldı)" | tee -a "$OUT/gui.txt"
           test "$rc" -eq 124
           echo "::notice title=GUI xcb Pardus ${{ matrix.surum }}::Arayüz xvfb altında 20 sn çökmeden çalıştı"
       - name: Kaldırma ve artık dosya denetimi
         run: |
-          apt-get purge -y -q pardusinsight
+          apt-get purge -y -q pardusinsight 2>&1 | tee kaldirma.txt
           test ! -e /usr/bin/pardusinsight
           test ! -e /usr/share/pardusinsight
           test ! -e /usr/share/applications/pardusinsight.desktop
           echo "::notice title=Paket Pardus ${{ matrix.surum }}::apt ile kuruldu, standart kullanıcıyla çalıştı, kaldırıldı; artık dosya yok"
+      - name: Hata ayrıntıları (iş notu)
+        if: failure()
+        run: |
+          # Ayrıntılı günlükler yalnızca oturum açmış kullanıcılara açık olduğundan son
+          # yazılan çıktı dosyalarının sonu iş notu olarak da verilir.
+          for f in $(ls -t *.txt *.log 2>/dev/null | head -n 4); do
+            printf '::error title=%s::%s\n' "$f" "$(tail -n 40 "$f" | sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g')"
+          done
       - name: Çıktıları sakla
         if: always()
         uses: actions/upload-artifact@v5
