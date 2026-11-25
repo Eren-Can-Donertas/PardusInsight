@@ -158,3 +158,72 @@ def test_disk_negative_single_short_burst(settings):
     samples = build_series(240, lambda i, t: _disk(80, 0, 95) if 462 <= t < 470 else
                            _disk(0.5, 0.5, 3))
     assert not DiskIoAnomalyRule().evaluate(samples, settings).triggered
+
+
+# ----------------------------------------------------------------------------- açıklama metinleri
+def test_insufficient_outcome_is_flagged_as_unknown(settings):
+    sparse = build_series(60, lambda i, t: dict(cpu_percent=None if i % 2 else 97.0))
+    out = SustainedCpuRule().evaluate(sparse, settings)
+    assert out.reason.startswith("Yetersiz veri") and out.insufficient
+    normal = SustainedCpuRule().evaluate(build_series(60), settings)
+    assert not normal.triggered and not normal.insufficient
+
+
+def test_memory_value_near_threshold_is_not_rounded_onto_it(settings):
+    samples = build_series(60, lambda i, t: dict(mem_available_percent=9.97,
+                                                 swap_in_pages_per_s=200.0))
+    out = MemoryPressureRule().evaluate(samples, settings)
+    assert out.triggered and "son medyan %9,97" in out.draft.summary
+
+
+def test_disk_floor_note_keeps_fraction(settings):
+    s = replace(settings, disk_min_throughput_mib_s=2.5)
+    samples = build_series(240, lambda i, t: _disk(2, 1, 5) if t >= 360 else _disk(0.05, 0.05, 1))
+    out = DiskIoAnomalyRule().evaluate(samples, s)
+    assert out.triggered
+    notes = [e.note for e in out.draft.evidence if e.metric == "disk_total_bytes_per_s"]
+    assert notes and all("2,5 MiB/sn" in n for n in notes)
+
+
+def test_disk_negative_reason_names_the_failing_window(settings):
+    # Sıçrama yalnızca son pencerede: neden metni geçen değil, geçemeyen pencereyi göstermeli
+    samples = build_series(240, lambda i, t: _disk(60, 40, 90) if t >= 440 else _disk(0.6, 0.4, 3))
+    out = DiskIoAnomalyRule().evaluate(samples, settings)
+    assert not out.triggered
+    assert "ilk pencere okuma+yazma medyanı 1,0 MiB/sn" in out.reason
+    assert "ilk pencere meşguliyet medyanı %3,0" in out.reason
+
+
+def test_disk_busy_alert_reports_baseline_busy(settings):
+    samples = build_series(240, lambda i, t: _disk(1.5, 0.5, 92) if t >= 360 else
+                           _disk(0.6, 0.4, 10))
+    out = DiskIoAnomalyRule().evaluate(samples, settings)
+    assert out.triggered and "önceki dönem medyanı %10,0" in out.draft.summary
+    baseline = next(e for e in out.draft.evidence if e.metric == "baseline_busy_percent")
+    assert baseline.value == 10.0 and baseline.satisfied
+
+
+def test_cpu_summary_has_no_fixed_turkish_suffix(settings):
+    s = replace(settings, cpu_min_fraction=0.5)
+    out = SustainedCpuRule().evaluate(build_series(60, lambda i, t: dict(cpu_percent=96.0)), s)
+    assert "örneklerin en az %50 kadarında %85 eşiğinin üzerindeydi" in out.draft.summary
+    assert "'i " not in out.draft.summary
+
+
+def test_process_context_averages_over_appearances(settings, brief):
+    top = (brief(4100, "cc1plus", cpu=20.0),)
+    samples = build_series(60, lambda i, t: dict(cpu_percent=96.0,
+                                                 top_cpu=top if i % 2 == 0 else ()))
+    out = SustainedCpuRule().evaluate(samples, settings)
+    (line,) = out.draft.context
+    assert line.startswith("cc1plus (PID 4100): ortalama %20,0 CPU")
+    assert "15/30 örnekte" in line
+
+
+def test_context_says_so_when_no_process_information(settings):
+    from pardusinsight.analysis.rules import NO_PROCESS_INFO
+
+    cpu = SustainedCpuRule().evaluate(build_series(60, lambda i, t: dict(cpu_percent=96.0)),
+                                      settings)
+    disk = DiskIoAnomalyRule().evaluate(build_series(35, lambda i, t: _disk(3, 1, 95)), settings)
+    assert cpu.draft.context == (NO_PROCESS_INFO,) == disk.draft.context

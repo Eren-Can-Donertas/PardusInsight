@@ -121,3 +121,12 @@ def test_root_warning_is_informational(monkeypatch):
     buf = io.StringIO()
     cli.warn_if_root(buf)
     assert "root yetkisi gerektirmez" in buf.getvalue()
+
+
+def test_replay_with_different_interval_still_finds_alerts(capsys):
+    scenario = Path(__file__).resolve().parents[1] / "scenarios" / "demo.json"
+    assert cli.main(["--headless", "--replay", str(scenario), "--interval", "1"]) == 0
+    out = capsys.readouterr().out
+    for title in ("Kalıcı CPU yoğunluğu", "Bellek baskısı olasılığı",
+                  "Disk G/Ç etkinliği anomalisi"):
+        assert title in out
