@@ -13,6 +13,12 @@ from pardusinsight.collectors.processes import ProcessCollector, top_processes
 from pardusinsight.collectors.procfs import ProcFsReader
 from pardusinsight.collectors.system import LinuxSystemCollector
 
+try:  # Kullanıcı veritabanı (pwd) yalnızca Unix'te vardır; Windows'ta uid metin olarak kalır
+    import pwd  # noqa: F401
+    HAS_PWD = True
+except ImportError:  # pragma: no cover - Windows
+    HAS_PWD = False
+
 CpuT = namedtuple("CpuT", "user nice system idle iowait irq softirq steal")
 Disk = namedtuple("Disk", "read_count write_count read_bytes write_bytes busy_time")
 
@@ -78,7 +84,7 @@ def test_process_collector_normalizes_cpu_by_core_count():
     snap = ProcessCollector(ps, cpu_count=4).collect()
     p = snap.processes[0]
     assert p.cpu_percent == 50.0  # 2 çekirdek dolu / 4 çekirdek
-    assert p.username == "root"
+    assert p.username == ("root" if HAS_PWD else "0")
     assert p.rss_bytes == 10 * 1024 * 1024
 
 

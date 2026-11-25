@@ -93,7 +93,8 @@ def test_no_process_control_or_destructive_calls():
 
 def test_open_calls_are_read_only_outside_export():
     for path in _python_files():
-        rel = str(path.relative_to(PACKAGE))
+        # as_posix(): Windows'ta da "export/atomic.py" biçiminde karşılaştırılsın
+        rel = path.relative_to(PACKAGE).as_posix()
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "open"):
