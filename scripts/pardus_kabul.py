@@ -95,7 +95,7 @@ TITLES: Dict[str, str] = {
     "5.3": "CSV dışa aktarma ve geri okuma (Türkçe karakterler)",
     "5.3b": "CSV'yi LibreOffice Calc'ta açın: sütunlar ve Türkçe karakterler doğru",
     "5.4": "JSON rapor dışa aktarma ve geri yükleme",
-    "5.5": "Eşik ayarı çalışıyor (CPU eşiği %1 ile canlı uyarı)",
+    "5.5": "Eşik ayarı çalışıyor (CPU eşiği %0,1 ile canlı uyarı)",
     "5.6": "Olağan kullanımda yanlış pozitif yok",
     "5.7": "XFCE koyu temada grafikler ve metinler okunaklı",
     "5.8": "`--headless --duration 60`: satır satır özet, Ctrl+C ile temiz çıkış",
@@ -168,7 +168,9 @@ COUNTER_EXAMPLES = (("cpu_spikes.json", "sustained_cpu"),
 OPTIONAL_SCENARIOS = {"disk_steady.json"}
 DEMO_TICKS = 251
 DEMO_START = 1_767_225_600.0  # sabit başlangıç: belirlenimci zaman damgaları
-THRESHOLD_CONFIG = {"analysis": {"cpu_high_pct": 1, "cpu_min_fraction": 0.1, "window_s": 20}}
+# %0,1: boşta duran bir sunucuda bile (CI kapsayıcısında örneklerin bir kısmı %1 altında)
+# kesin tetiklenir; amaç yalnızca eşik ayarının canlı veride etkili olduğunu göstermek.
+THRESHOLD_CONFIG = {"analysis": {"cpu_high_pct": 0.1, "cpu_min_fraction": 0.1, "window_s": 20}}
 LONG_RUN_MINUTES = 35
 HOME_DIRS = (("~", ()), ("~/.config", (".config",)), ("~/.local/share", (".local", "share")),
              ("~/.cache", (".cache",)))
@@ -1461,7 +1463,7 @@ def check_5_5(ctx: Context) -> Check:
     res = run_command(app_cmd("--headless", "--duration", "70", "--interval", "2", "--quiet",
                               "--config", config), timeout=200, cwd=folder, env=child_env())
     fired = "Kalıcı CPU yoğunluğu" in res.output
-    setting = ("`--config` ile CPU eşiği %1, oran 0,1, pencere 20 sn; 70 sn canlı izleme "
+    setting = ("`--config` ile CPU eşiği %0,1, oran 0,1, pencere 20 sn; 70 sn canlı izleme "
                "(`--headless --interval 2 --quiet`)")
     if fired and res.ok:
         return Check(no, TITLES[no], GECTI,
