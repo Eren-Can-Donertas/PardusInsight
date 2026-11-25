@@ -136,12 +136,29 @@ jobs:
         run: |
           runuser -u ogrenci -- python3 scripts/validate_metrics.py --rounds 10 --interval 1 2>&1 | tee ../dogrulama.txt
           echo "::notice title=Doğrulama Pardus ${{ matrix.surum }}::$(grep 'En büyük farklar' ../dogrulama.txt)"
+          echo "::notice title=Doğrulama tablosu Pardus ${{ matrix.surum }}::$(sed -e 's/%/%25/g' ../dogrulama.txt | sed -e ':a;N;$!ba;s/\n/%0A/g')"
       - name: Performans (GUI'siz ve GUI, 60 sn)
         working-directory: kaynak
         run: |
           runuser -u ogrenci -- python3 scripts/perf_check.py --duration 60 2>&1 | tee ../perf.txt
           runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 scripts/perf_check.py --gui --duration 60 2>&1 | tee -a ../perf.txt
-          echo "::notice title=Performans Pardus ${{ matrix.surum }}::$(grep -E 'Ortalama CPU|RSS|Hedef|Olay' ../perf.txt | tr '\n' ' ')"
+          echo "::notice title=Performans Pardus ${{ matrix.surum }}::$(sed -e 's/%/%25/g' ../perf.txt | sed -e ':a;N;$!ba;s/\n/%0A/g')"
+      - name: Pardus kabul betiği (otomatik maddeler, standart kullanıcı)
+        working-directory: kaynak
+        run: |
+          rc=0
+          runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 scripts/pardus_kabul.py \
+            --cikti /tmp/kabul.md > ../kabul-cikti.txt 2>&1 || rc=$?
+          cp /tmp/kabul.md ../kabul.md 2>/dev/null || true
+          ozet=$(sed -n '/^## Özet/,/^## Elle/p' ../kabul.md | grep -v '^## ' | grep . | tr '\n' ' ')
+          echo "::notice title=Kabul betiği Pardus ${{ matrix.surum }} (çıkış $rc)::$ozet"
+          # Raporun tamamı iş notlarına parça parça yazılır (günlükler oturum açmadan okunamıyor)
+          split -C 30000 ../kabul.md ../kabul-parca-
+          for f in ../kabul-parca-*; do
+            printf '::notice title=Kabul raporu %s::%s\n' "$(basename "$f")" \
+              "$(sed -e 's/%/%25/g' "$f" | sed -e ':a;N;$!ba;s/\n/%0A/g')"
+          done
+          exit $rc
       - name: .deb paketini oluştur ve incele
         working-directory: kaynak
         run: |
