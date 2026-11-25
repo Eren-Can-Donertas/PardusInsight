@@ -116,6 +116,124 @@ def test_no_privilege_escalation_strings():
             assert word not in text, f"{path.relative_to(PACKAGE)}: {word}"
 
 
+# ----------------------------------------------------------------------------- genişletilmiş denetim
+# Yukarıdaki denetimler yalnızca çıplak open() kipine ve öznitelik çağrılarına bakıyordu;
+# Path.write_text(), io.open(..., "w"), "from os import kill; kill(...)", getattr ile
+# çağrı veya PySide6.QtNetwork gibi yollar fark edilmiyordu.
+EXTRA_FORBIDDEN_CALLS = {"killpg", "execv", "execve", "execvp", "execvpe", "execl", "execlp",
+                         "spawnl", "spawnv", "spawnvp", "posix_spawn", "startDetached",
+                         "setrlimit", "prlimit", "sched_setscheduler"}
+EXTRA_FORBIDDEN_MODULES = {"urllib3", "httpx", "aiohttp", "telnetlib", "xmlrpc", "webbrowser",
+                           "paramiko"}
+FORBIDDEN_DOTTED_MODULES = {"PySide6.QtNetwork", "PySide6.QtWebSockets",
+                            "PySide6.QtWebEngineCore"}
+# Dosya sistemini değiştiren yardımcılar: yalnızca kullanıcı isteğiyle rapor yazan modülde
+WRITE_HELPERS = {"write_text", "write_bytes", "touch", "mkdir", "makedirs", "unlink", "rmtree",
+                 "rename", "symlink_to", "truncate", "mkstemp", "mkdtemp", "NamedTemporaryFile",
+                 "TemporaryDirectory"}
+MODULE_OPENERS = {"io", "codecs", "builtins"}  # modül.open(dosya, kip)
+
+
+def _call_name(func):
+    return func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+
+
+def _constant(node):
+    return node.value if isinstance(node, ast.Constant) else None
+
+
+def safety_violations(source, write_allowed=False):
+    """Kaynak kodda salt-okunur ilkeyi çiğneyen kullanımlar ("satır: açıklama")."""
+    calls = FORBIDDEN_ATTRS | EXTRA_FORBIDDEN_CALLS
+    modules = FORBIDDEN_MODULES | EXTRA_FORBIDDEN_MODULES
+    names = calls | (set() if write_allowed else WRITE_HELPERS)
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name in FORBIDDEN_DOTTED_MODULES or alias.name.split(".")[0] in modules:
+                    found.append(f"{node.lineno}: yasak modül {alias.name}")
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            if node.module in FORBIDDEN_DOTTED_MODULES or node.module.split(".")[0] in modules:
+                found.append(f"{node.lineno}: yasak modül {node.module}")
+            for alias in node.names:
+                if f"{node.module}.{alias.name}" in FORBIDDEN_DOTTED_MODULES:
+                    found.append(f"{node.lineno}: yasak modül {node.module}.{alias.name}")
+                if alias.name in names:
+                    found.append(f"{node.lineno}: yasak ad içe aktarılıyor: {alias.name}")
+        elif (isinstance(node, ast.Name) and node.id == "QSettings") or \
+                (isinstance(node, ast.Attribute) and node.attr == "QSettings"):
+            found.append(f"{node.lineno}: QSettings (kalıcı ayar yazımı)")
+        if not isinstance(node, ast.Call):
+            continue
+        name = _call_name(node.func)
+        if name in names:
+            found.append(f"{node.lineno}: {name}()")
+        inner = node.func if isinstance(node.func, ast.Call) else None
+        if inner is not None and _call_name(inner.func) == "getattr" and len(inner.args) > 1 \
+                and _constant(inner.args[1]) in names:  # getattr(p, "kill")() çağrısı
+            found.append(f"{node.lineno}: getattr(..., {_constant(inner.args[1])!r})()")
+        if name in ("__import__", "import_module") and node.args:
+            target = _constant(node.args[0])
+            if isinstance(target, str) and (target.split(".")[0] in modules
+                                            or target in FORBIDDEN_DOTTED_MODULES):
+                found.append(f"{node.lineno}: dinamik içe aktarma {target}")
+        if name == "open":
+            receiver = node.func.value if isinstance(node.func, ast.Attribute) else None
+            if isinstance(receiver, ast.Name) and receiver.id == "os":
+                if not write_allowed:
+                    found.append(f"{node.lineno}: os.open()")
+                continue
+            module_style = receiver is None or (isinstance(receiver, ast.Name)
+                                                and receiver.id in MODULE_OPENERS)
+            position = 1 if module_style else 0  # Path(...).open(kip)
+            mode = node.args[position] if len(node.args) > position else next(
+                (k.value for k in node.keywords if k.arg == "mode"), None)
+            value = "r" if mode is None else _constant(mode)
+            if value not in ("r", "rb", "rt"):
+                found.append(f"{node.lineno}: open(kip={value!r})")
+    return found
+
+
+def test_package_has_no_safety_violations():
+    for path in _python_files():
+        rel = path.relative_to(PACKAGE).as_posix()
+        assert safety_violations(path.read_text(encoding="utf-8"), rel in WRITE_ALLOWED) == [], rel
+
+
+@pytest.mark.parametrize("code", [
+    "from os import kill\nkill(1, 9)",
+    "import os\nos.killpg(1, 15)",
+    "getattr(proc, 'kill')()",
+    "from pathlib import Path\nPath('/proc/sys/vm/swappiness').write_text('10')",
+    "import io\nio.open('/sys/block/sda/queue/scheduler', 'w')",
+    "from pathlib import Path\nPath('x').open('w')",
+    "import os\nos.open('/proc/sys/vm/swappiness', 1)",
+    "open('/etc/x', mode='a')",
+    "from PySide6.QtNetwork import QNetworkAccessManager",
+    "from PySide6 import QtNetwork",
+    "__import__('subprocess')",
+    "import importlib\nimportlib.import_module('socket')",
+    "from PySide6.QtCore import QSettings\nQSettings('a', 'b').setValue('k', 1)",
+    "import tempfile\ntempfile.NamedTemporaryFile(delete=False)",
+    "import os\nos.makedirs('/tmp/x')",
+])
+def test_safety_checker_detects_violation(code):
+    assert safety_violations(code), code
+
+
+@pytest.mark.parametrize("code", [
+    "open('/proc/stat')",
+    "open(path, 'rb')",
+    "from pathlib import Path\nPath(p).open()",
+    "import io\nio.open(p, encoding='utf-8')",
+    "text.replace('a', 'b')",
+    "import os\ngetattr(os, 'geteuid', None)",
+])
+def test_safety_checker_accepts_read_only_code(code):
+    assert safety_violations(code) == []
+
+
 def test_root_warning_is_informational(monkeypatch):
     monkeypatch.setattr(os, "geteuid", lambda: 0, raising=False)
     buf = io.StringIO()

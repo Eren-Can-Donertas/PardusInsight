@@ -227,3 +227,101 @@ def test_context_says_so_when_no_process_information(settings):
                                       settings)
     disk = DiskIoAnomalyRule().evaluate(build_series(35, lambda i, t: _disk(3, 1, 95)), settings)
     assert cpu.draft.context == (NO_PROCESS_INFO,) == disk.draft.context
+
+
+# ----------------------------------------------------------------------------- sınırlar ve karşı-örnekler
+# (Mutasyon denemesi: aşağıdaki testler olmadan "her pencerede" -> "herhangi bir pencerede",
+#  medyan -> ortalama, < -> <= gibi değişiklikler hiçbir testi düşürmüyordu.)
+@pytest.mark.parametrize("value, fires", [(10.0, False), (9.99, True)])
+def test_memory_available_threshold_is_strict(settings, value, fires):
+    samples = build_series(60, lambda i, t: dict(mem_available_percent=value,
+                                                 swap_in_pages_per_s=500.0))
+    assert MemoryPressureRule().evaluate(samples, settings).triggered is fires
+
+
+def test_memory_support_threshold_is_inclusive(settings):
+    samples = build_series(60, lambda i, t: dict(mem_available_percent=6.0,
+                                                 swap_in_pages_per_s=50.0,
+                                                 swap_out_pages_per_s=50.0))  # tam 100 sayfa/sn
+    assert MemoryPressureRule().evaluate(samples, settings).triggered
+
+
+@pytest.mark.parametrize("value, severity", [(5.0, SEVERITY_WARNING), (4.99, SEVERITY_CRITICAL)])
+def test_memory_critical_threshold_is_strict(settings, value, severity):
+    samples = build_series(60, lambda i, t: dict(mem_available_percent=value,
+                                                 swap_in_pages_per_s=400.0,
+                                                 swap_out_pages_per_s=400.0,
+                                                 major_faults_per_s=500.0))
+    assert MemoryPressureRule().evaluate(samples, settings).draft.severity == severity
+
+
+def test_memory_single_support_stays_warning_even_when_very_low(settings):
+    samples = build_series(60, lambda i, t: dict(mem_available_percent=3.0,
+                                                 swap_in_pages_per_s=150.0,
+                                                 swap_out_pages_per_s=150.0))
+    d = MemoryPressureRule().evaluate(samples, settings).draft
+    assert d.severity == SEVERITY_WARNING and d.confidence == "orta"
+
+
+def test_memory_critical_requires_every_window_below_critical(settings):
+    samples = build_series(60, lambda i, t: dict(
+        mem_available_percent=3.0 if t > 88 else 7.0, swap_in_pages_per_s=400.0,
+        swap_out_pages_per_s=400.0, major_faults_per_s=500.0, psi_memory_some=30.0))
+    d = MemoryPressureRule().evaluate(samples, settings).draft
+    assert d.severity == SEVERITY_WARNING and d.confidence == "yüksek"
+
+
+def test_memory_major_faults_alone_support_the_alert(settings):
+    samples = build_series(60, lambda i, t: dict(mem_available_percent=6.0,
+                                                 major_faults_per_s=400.0))
+    out = MemoryPressureRule().evaluate(samples, settings)
+    assert out.triggered
+    support = {e.metric: e.satisfied for e in out.draft.evidence if e.role == "support"}
+    assert support == {"swap_activity": False, "major_faults_per_s": True,
+                       "psi_memory_some": False}
+
+
+def test_cpu_fraction_and_threshold_are_inclusive(settings):
+    # Her pencerede 15 örneğin 12'si tam %85: oran tam %80 -> tetiklenir
+    samples = build_series(60, lambda i, t: dict(cpu_percent=85.0 if i % 5 else 10.0))
+    out = SustainedCpuRule().evaluate(samples, settings)
+    assert out.triggered
+    triggers = [e for e in out.draft.evidence if e.role == "trigger"]
+    assert [e.value for e in triggers] == [80.0, 80.0] and all(e.satisfied for e in triggers)
+
+
+def test_cpu_high_average_without_sustained_fraction_does_not_trigger(settings):
+    # Örneklerin %60'ı %100, %40'ı %70: pencere ortalaması %88 ama eşik üstü oran %60
+    samples = build_series(60, lambda i, t: dict(cpu_percent=100.0 if i % 5 < 3 else 70.0))
+    out = SustainedCpuRule().evaluate(samples, settings)
+    assert not out.triggered and "kalıcı değil" in out.reason
+
+
+def test_disk_ratio_condition_alone_triggers_with_low_confidence(settings):
+    # SSD/NVMe: hız 50 kat arttı ama meşguliyet %40'ta kaldı
+    samples = build_series(240, lambda i, t: _disk(30, 20, 40) if t >= 360 else
+                           _disk(0.6, 0.4, 3))
+    d = DiskIoAnomalyRule().evaluate(samples, settings).draft
+    assert d.confidence == "düşük" and "kat arttı" in d.summary
+    assert "meşguliyeti" not in d.summary
+
+
+def test_disk_both_conditions_give_medium_confidence(settings):
+    samples = build_series(240, lambda i, t: _disk(60, 40, 90) if t >= 360 else
+                           _disk(0.6, 0.4, 3))
+    d = DiskIoAnomalyRule().evaluate(samples, settings).draft
+    assert d.confidence == "orta" and "kat arttı" in d.summary and "meşguliyeti" in d.summary
+
+
+def test_disk_periodic_short_bursts_do_not_trigger(settings):
+    # Her 30 sn'de 8 sn'lik kopyalama: pencere ortalaması ~22 MiB/sn, medyan ~1 MiB/sn
+    samples = build_series(240, lambda i, t: _disk(80, 0, 95) if (t % 30) < 8 else
+                           _disk(0.5, 0.5, 3))
+    assert not DiskIoAnomalyRule().evaluate(samples, settings).triggered
+
+
+@pytest.mark.parametrize("now", [_disk(2.5, 2.5, 10), _disk(1, 1, 80)])
+def test_disk_thresholds_are_inclusive(settings, now):
+    # (1) medyan tam 5 MiB/sn = max(3 × 1 MiB/sn, 5 MiB/sn); (2) meşguliyet tam %80
+    samples = build_series(240, lambda i, t: now if t >= 360 else _disk(0.5, 0.5, 3))
+    assert DiskIoAnomalyRule().evaluate(samples, settings).triggered

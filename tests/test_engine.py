@@ -203,3 +203,72 @@ def test_recording_at_other_interval_is_analyzed_with_observed_interval():
 def test_effective_interval_ignores_single_gap():
     samples = [s for s in build_series(100) if not 60 < s.timestamp - T0 <= 90]
     assert RuleEngine().effective_settings(samples).sample_interval_s == 2.0
+
+
+# ----------------------------------------------------------------------------- yaşam döngüsü ayrıntıları
+def _feed(engine, samples):
+    keep = engine.settings.lookback_s + engine.settings.window_s
+    buffer = []
+    for sample in samples:
+        buffer = [s for s in buffer if s.timestamp >= sample.timestamp - keep] + [sample]
+        engine.evaluate(buffer)
+
+
+def test_resolution_happens_exactly_after_grace():
+    samples = build_series(150, cpu_profile(60, 200))
+    engine = RuleEngine()
+    run(engine, samples)
+    (alert,) = engine.alert_log()
+    assert alert.resolved_at - alert.last_seen == engine.settings.resolve_grace_s
+
+
+def test_window_start_keeps_episode_start_across_updates():
+    samples = build_series(100, lambda i, t: dict(cpu_percent=97.0))
+    engine = RuleEngine()
+    run(engine, samples)
+    (alert,) = engine.active_alerts()
+    assert alert.window_start == alert.first_seen - engine.settings.evaluation_span_s
+    assert alert.window_end == samples[-1].timestamp > alert.first_seen
+
+
+def test_log_bound_never_drops_the_active_alert():
+    engine = RuleEngine(max_log=2)
+    # 5 dk yük / 5 dk boşta döngüsü; son 4 dk'da yük sürüyor (aktif uyarı)
+    samples = build_series(1320, lambda i, t: dict(
+        cpu_percent=96.0 if (t // 300) % 2 == 0 or t >= 2400 else 5.0))
+    _feed(engine, samples)
+    log = engine.alert_log()
+    assert len(log) <= 2
+    assert [a.alert_id for a in engine.active_alerts()] == [log[-1].alert_id]
+    assert int(log[-1].alert_id.split("-")[-1]) >= 4  # önceki uyarılar açılıp kapandı
+
+
+def test_log_bound_keeps_every_active_alert():
+    from pardusinsight.analysis.rules import AlertDraft
+
+    def draft(title, samples):
+        ts = samples[-1].timestamp
+        return AlertDraft(title, "warning", "orta", "", ts - 1, ts, (), (), "", ())
+
+    class Always(Rule):
+        rule_id = "hep"
+        title = "Hep"
+
+        def evaluate(self, samples, settings):
+            return RuleOutcome(True, "ok", draft(self.title, samples))
+
+    class Later(Rule):
+        rule_id = "sonra"
+        title = "Sonra"
+
+        def evaluate(self, samples, settings):
+            on = len(samples) > 3
+            return RuleOutcome(on, "ok" if on else "yok", draft(self.title, samples) if on else None)
+
+    engine = RuleEngine(rules=[Always(), Later()], max_log=1)
+    samples = build_series(10)
+    for k in range(1, len(samples) + 1):
+        engine.evaluate(samples[:k])
+    logged = {a.alert_id for a in engine.alert_log()}
+    # Sınır aşılsa bile aktif uyarılar günlükten (arayüz ve rapordan) düşmez
+    assert {a.alert_id for a in engine.active_alerts()} == logged == {"hep-1", "sonra-2"}
