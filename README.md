@@ -44,6 +44,14 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python -m pardusinsight
 ```
 
+Pardus paketiyle (menü kaydı, simge ve `man pardusinsight` ile; ayrıntılar
+[docs/PAKETLEME.md](docs/PAKETLEME.md)):
+
+```bash
+python3 scripts/build_deb.py && sudo apt install ./dist/pardusinsight_0.1.0_all.deb
+pardusinsight                            # veya menü: Sistem → PardusInsight
+```
+
 Diğer kullanımlar:
 
 ```bash
@@ -76,15 +84,19 @@ pardusinsight/
   collectors/  procfs.py (saf ayrıştırıcılar), system.py (/proc + psutil yedeği),
                processes.py (süreç listesi), synthetic.py (senaryolar)
   core/        models.py, normalize.py, history.py, service.py, formatting.py
-  analysis/    rules.py, engine.py, windows.py, explain.py
+  analysis/    rules.py, engine.py, windows.py, calibration.py, explain.py
   export/      csv_export.py, json_export.py, atomic.py
   ui/          main_window.py, worker.py, charts.py, process_model.py, alerts_view.py,
                settings_dialog.py, app.py
   cli.py, config.py
-tests/         116 otomatik test (birim + entegrasyon + GUI + güvenlik)
-scenarios/     önceden kaydedilmiş sentetik senaryolar (JSON)
-scripts/       generate_scenarios.py, validate_metrics.py, perf_check.py, install_user.sh
-docs/          kurulum, kullanım, kurallar, mimari, demo, test raporu, Pardus doğrulama listesi
+tests/         otomatik testler (birim + entegrasyon + GUI + güvenlik + paket), bkz. TEST_RAPORU
+scenarios/     önceden kaydedilmiş sentetik senaryolar (her kural için pozitif + karşı-örnek)
+scripts/       generate_scenarios.py, validate_metrics.py, perf_check.py, install_user.sh,
+               build_deb.py (.deb paketi), kalibrasyon.py (eşik kalibrasyonu),
+               pardus_kabul.py (Pardus kabul listesi otomasyonu)
+packaging/     Debian paket dosyaları, .desktop, simge, man sayfası
+.github/       CI: Ubuntu, Windows ve resmî Pardus 25.1 kapsayıcısında testler ve paket denemesi
+docs/          kurulum, kullanım, kurallar, mimari, demo, test raporu, paketleme, Pardus doğrulama
 ```
 
 ## Güvenlik sınırları
@@ -103,16 +115,21 @@ Bu sınırlar `tests/test_cli_safety.py` içinde kaynak kod taraması (AST) ile 
 ## Testler
 
 ```bash
-.venv/bin/python -m pytest -q          # ekransız ortamda GUI testleri offscreen çalışır
+python3 -m pytest -q          # ekransız ortamda GUI testleri offscreen çalışır
+make kapsam                   # satır kapsamı raporuyla
 ```
 
-Son koşu (geliştirme makinesi, Ubuntu 24.04, Python 3.12.3, PySide6 6.12.0, psutil 7.2.2):
-**116 test geçti, 0 başarısız.** psutil/PySide6 kurulu olmayan Python'da 103 test geçer;
-canlı /proc testleri (6) ve GUI test modülü atlanır. Test envanteri, doğrulama tablosu ve performans ölçümleri:
-[docs/TEST_RAPORU.md](docs/TEST_RAPORU.md)
+[![CI](https://github.com/Eren-Can-Donertas/PardusInsight/actions/workflows/ci.yml/badge.svg)](https://github.com/Eren-Can-Donertas/PardusInsight/actions/workflows/ci.yml)
 
-> **Pardus 25.1 XFCE üzerinde henüz test edilmedi.** Bu belgelerdeki tüm ölçümler geliştirme
-> makinesine aittir. Pardus'ta yapılması gereken kontroller:
+Testler her push'ta GitHub Actions'ta çalışır: Ubuntu (Python 3.9 ve 3.13), Windows ve
+**resmî Pardus 25.1/25.2 Docker imajları** (`pardus/yirmibes`). Pardus imajında bağımlılıklar
+Pardus deposundan kurulur, testler root olmayan bir kullanıcıyla çalışır. Son koşuda Pardus
+25.1'de **316/316 test geçti**. `.deb` paketi apt ile kurulup çalıştırıldı ve kaldırıldı; kabul
+betiğinde KALDI madde çıkmadı; 35 dakikalık uzun koşuda bellek sabit kaldı. Test envanteri,
+doğrulama tablosu ve performans ölçümleri: [docs/TEST_RAPORU.md](docs/TEST_RAPORU.md)
+
+> Kapsayıcı Pardus'un kullanıcı alanını sağlar; çekirdek GitHub sunucusunundur ve masaüstü
+> oturumu yoktur. XFCE oturumunda yapılacak kontroller tek komutla çalışır:
 > [docs/PARDUS_DOGRULAMA.md](docs/PARDUS_DOGRULAMA.md)
 
 ## Yapay zekâ kullanımı
@@ -125,6 +142,12 @@ Ders yönergesi yapay zekâ kullanımına izin verir ve kullanımın açıklanma
   (`BIL461_PardusInsight.pdf`) girdi olarak verilerek **Anthropic Claude (Claude Code)** ile
   oluşturuldu. Yapay zekânın katkısı: mimari taslak, modüllerin kodu, kural eşiklerinin ilk
   değerleri, otomatik testler, sentetik senaryolar ve bu belgelerin taslağı.
+- **Geliştirme aşaması, Oğuz'un görevleri:** Paketleme (`.deb`), sürekli entegrasyon (resmî
+  Pardus 25.1 kapsayıcısı dahil), eşik kalibrasyon aracı, Pardus kabul betiği, zaman penceresi
+  ve kural testleri ile kod incelemesinde bulunan hataların düzeltilmesi de **Claude Code**
+  desteğiyle yapıldı. Kod incelemesinde her bulgu, kod çalıştırılarak yeniden üretildi ve
+  bağımsız olarak doğrulandı. Düzeltmeler, eski kodda başarısız olan regresyon testleriyle
+  birlikte commit'lendi. İlgili commit'ler `Co-Authored-By: Claude` satırı taşır.
 - **Ekibin sorumluluğu:** Her üye kendi modülünü satır satır inceleyip açıklayabilmeli,
   Pardus 25.1 XFCE üzerinde doğrulama ve eşik kalibrasyonunu yapmalı, bulduğu hataları
   düzeltmelidir. Yapay zekâ çıktısı doğrulanmadan "çalışıyor" kabul edilmemiştir. Bu
