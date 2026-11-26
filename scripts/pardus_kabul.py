@@ -12,11 +12,12 @@ Kullanım:
   python3 scripts/pardus_kabul.py --hizli                                 # yavaş ölçümler yok
   python3 scripts/pardus_kabul.py --gui --cikti docs/PARDUS_SONUCLARI.md  # XFCE oturumunda
   python3 scripts/pardus_kabul.py --uzun                                  # + 35 dk (madde 4.2)
-  python3 scripts/pardus_kabul.py --kalibrasyon-suresi 1800 --kayit-klasoru docs/kayitlar \\
-      --cikti docs/PARDUS_SONUCLARI.md
+  python3 scripts/pardus_kabul.py --gui --kalibrasyon-suresi 1800 \\
+      --kayit-klasoru docs/kayitlar --cikti docs/PARDUS_SONUCLARI.md     # VM'de tam koşu
 
 Çıkış kodu: KALDI yoksa 0, en az bir KALDI varsa 1. Ctrl+C ile kesilirse 130: o ana kadarki
-kısmi rapor standart çıktıya yazılır, --cikti dosyasına dokunulmaz.
+kısmi rapor standart çıktıya yazılır, --cikti dosyasına dokunulmaz (kalibrasyon kaydı
+sürerken kesilirse o ana kadarki kayıt --kayit-klasoru'na yine saklanır).
 """
 from __future__ import annotations
 
@@ -25,6 +26,7 @@ import getpass
 import importlib
 import importlib.util
 import json
+import math
 import os
 import platform
 import re
@@ -34,6 +36,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
@@ -68,13 +71,14 @@ LABELS = {GECTI: "✅ GEÇTİ", KALDI: "❌ KALDI", ATLANDI: "⏭ ATLANDI", MANU
 GROUPS = (("1", "Kurulum"), ("2", "Standart kullanıcı ve güvenlik"), ("3", "Ölçüm doğruluğu"),
           ("4", "Performans"), ("5", "İşlevler"), ("6", "Eşik kalibrasyonu"))
 
-# Madde numaraları ve başlıkları docs/PARDUS_DOGRULAMA.md ile aynıdır.
+# Madde numaraları ve başlıkları docs/PARDUS_DOGRULAMA.md ile aynıdır. "b" ekli maddeler
+# (3.3b, 4.1b, 5.3b) listedeki maddenin ayrı satırda raporlanan elle/GUI parçasıdır.
 TITLES: Dict[str, str] = {
     "1.1": "Paketler depoda: `apt-cache policy python3-pyside6.qtwidgets python3-psutil`",
     "1.2": "Kurulum: psutil ve PySide6.QtWidgets yükleniyor",
     "1.3": "Seçenek B (sanal ortam) ile kurulum",
-    "1.4": "Menü kaydı (`pardusinsight.desktop`) kurulu ve geçerli",
-    "1.4b": "XFCE menüsünde (Sistem) PardusInsight görünüyor ve açılıyor",
+    "1.4": "`.deb` paketi / menü kaydı (`pardusinsight.desktop`) kurulu ve geçerli",
+    "1.5": "XFCE menüsünde (Sistem) PardusInsight görünüyor ve açılıyor",
     "2.1": "Standart kullanıcıyla çalışma (root değil)",
     "2.2": "Canlı izlemede /proc okuma hatası yok",
     "2.3": "Root süreçlerinin G/Ç alanları boş (\"—\"), tarama çökmüyor",
@@ -99,12 +103,14 @@ TITLES: Dict[str, str] = {
     "5.6": "Olağan kullanımda yanlış pozitif yok",
     "5.7": "XFCE koyu temada grafikler ve metinler okunaklı",
     "5.8": "`--headless --duration 60`: satır satır özet, Ctrl+C ile temiz çıkış",
+    "5.9": "GUI gerçek grafik oturumda (X11 `xcb` eklentisi) açılıyor, çökmüyor",
     "6": "Eşik kalibrasyonu (olağan kullanım kaydı)",
 }
 
 LINUX_ONLY = "yalnızca Linux'ta çalışır (canlı /proc gerekir)"
-CALIBRATION_CMD = ("python3 scripts/pardus_kabul.py --kalibrasyon-suresi 1800 "
-                   "--kayit-klasoru docs/kayitlar")
+# docs/PARDUS_DOGRULAMA.md'deki VM komutunun aynısı: sonuçlar PARDUS_SONUCLARI.md'ye yazılır
+CALIBRATION_CMD = ("python3 scripts/pardus_kabul.py --gui --kalibrasyon-suresi 1800 "
+                   "--kayit-klasoru docs/kayitlar --cikti docs/PARDUS_SONUCLARI.md")
 
 MANUAL_1_3 = (
     "Seçenek B'yi deneyin (gerekirse önce `sudo apt install python3-venv`): "
@@ -115,9 +121,10 @@ MANUAL_1_3 = (
     "`sudo apt install libxcb-cursor0` notunun sorunu çözdüğünü doğrulayın.")
 MANUAL_1_4 = (
     "`pardusinsight.desktop` bulunamadı (~/.local/share/applications, /usr/share/applications): "
-    "`scripts/install_user.sh` çalıştırın veya .deb paketini kurun (`python3 scripts/build_deb.py` "
-    "→ `sudo apt install ./dist/pardusinsight_*_all.deb`), sonra bu betiği yeniden çalıştırın.")
-MANUAL_1_4B = (
+    ".deb paketini kurun (`python3 scripts/build_deb.py` → "
+    "`sudo apt install ./dist/pardusinsight_*_all.deb`) veya `scripts/install_user.sh` "
+    "çalıştırın, sonra bu betiği yeniden çalıştırın.")
+MANUAL_1_5 = (
     "Uygulamalar menüsü → Sistem → PardusInsight (veya menü aramasına \"PardusInsight\" yazın): "
     "simge görünmeli; tıklayınca pencere parola/yetki istemeden açılmalı ve canlı ölçümler "
     "akmalı.")
@@ -151,9 +158,9 @@ MANUAL_6 = (
     "docs/KURALLAR.md'ye işleyin.")
 
 INTRO = (
-    "Bu rapor `scripts/pardus_kabul.py` ile otomatik üretildi; "
-    "[PARDUS_DOGRULAMA.md](PARDUS_DOGRULAMA.md) listesindeki otomatikleştirilebilen maddeleri "
-    "çalıştırır. **✅ GEÇTİ**: beklenen sağlandı · **❌ KALDI**: sağlanmadı · **⏭ ATLANDI**: bu "
+    "Bu rapor, [PARDUS_DOGRULAMA.md](PARDUS_DOGRULAMA.md) listesindeki otomatikleştirilebilen "
+    "maddeleri çalıştıran `scripts/pardus_kabul.py` ile otomatik üretildi. "
+    "**✅ GEÇTİ**: beklenen sağlandı · **❌ KALDI**: sağlanmadı · **⏭ ATLANDI**: bu "
     "ortamda veya seçilen seçeneklerle çalıştırılmadı (neden Ayrıntı sütununda) · **✋ MANUEL**: "
     "insan gözü gerektirir (XFCE menüsü, koyu tema, LibreOffice…); \"Elle yapılacaklar\" "
     "bölümündeki yönergelerle denenip sonucu bu dosyaya elle işlenmelidir · **ℹ BİLGİ**: yalnızca "
@@ -172,8 +179,18 @@ DEMO_START = 1_767_225_600.0  # sabit başlangıç: belirlenimci zaman damgalar�
 # kesin tetiklenir; amaç yalnızca eşik ayarının canlı veride etkili olduğunu göstermek.
 THRESHOLD_CONFIG = {"analysis": {"cpu_high_pct": 0.1, "cpu_min_fraction": 0.1, "window_s": 20}}
 LONG_RUN_MINUTES = 35
+MAX_CALIBRATION_S = 4 * 3600.0  # 4 sa; liste 30 dk (1800 sn) öneriyor
+# Arka planda başlatılan uygulamanın "hazır" sayıldığı an: ilk ölçüm satırı. Bu satır
+# run_headless'ın try bloğunun içinde yazılır; Ctrl+C ancak bundan sonra temiz yakalanır.
+READY_MARK = "CPU"
+READY_TIMEOUT_S = 30.0  # yavaş VM'de bile (pyc yok, soğuk disk) ilk satır için yeterli
+UNBUFFERED = {"PYTHONUNBUFFERED": "1"}  # boruya yazılan satırlar tamponda beklemesin
+GUI_PROBE_SECONDS = 6
 HOME_DIRS = (("~", ()), ("~/.config", (".config",)), ("~/.local/share", (".local", "share")),
              ("~/.cache", (".cache",)))
+# PardusInsight'ın kendi adı (pardusinsight, PardusInsight, pardus-insight, pardus_insight...).
+# Pardus'un kendi uygulamalarının (pardus-update, pardus-software...) girişleri bununla eşleşmez.
+OWN_ENTRY = re.compile(r"pardus[-_. ]?insight", re.IGNORECASE)
 # Kimlik belirtmeyen, metinde başka anlamda da geçen adlar gizlenmez (ör. "depo.pardus.org.tr")
 GENERIC_NAMES = frozenset({"root", "pardus", "debian", "ubuntu", "user", "admin", "localhost",
                            "localhost.localdomain"})
@@ -216,7 +233,17 @@ class CommandResult:
             return self.error
         if self.timed_out:
             return f"zaman aşımı ({tr_num(self.duration_s, 0)} sn)"
-        return f"çıkış kodu {self.code}"
+        return exit_text(self.code)
+
+
+def exit_text(code: Optional[int]) -> str:
+    """Çıkış kodu; sinyalle sonlanan süreçte sinyalin adı da (ör. Qt'nin abort'u: SIGABRT)."""
+    if code is not None and code < 0:
+        try:
+            return f"çıkış kodu {code} (sinyal {signal.Signals(-code).name})"
+        except ValueError:
+            pass
+    return f"çıkış kodu {code}"
 
 
 @dataclass
@@ -226,6 +253,7 @@ class LiveRecording:
     samples: List[SystemSample]
     duration_s: float
     path: Optional[str] = None  # --kayit-klasoru ile saklandıysa dosya yolu
+    save_error: str = ""  # kayıt dosyaya yazılamadıysa neden (örnekler bellekten analiz edilir)
 
 
 class Context:
@@ -348,32 +376,111 @@ def script_cmd(name: str, *args: str) -> List[str]:
     return [sys.executable, os.path.join(ROOT, "scripts", name), *args]
 
 
-def stop_process(proc: "subprocess.Popen[bytes]", sig: Optional[int] = None,
-                 timeout: float = 30.0) -> Tuple[Optional[int], str]:
-    """İsteğe bağlı sinyal gönderir, sürecin bitmesini bekler; süre dolarsa sonlandırır."""
-    if sig is not None and proc.poll() is None:
-        proc.send_signal(sig)
-    try:
-        out, _ = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.terminate()
-        try:
-            out, _ = proc.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            out, _ = proc.communicate()
-    return proc.returncode, _decode(out)
+class ChildProcess:
+    """Arka planda çalışan alt süreç; çıktısı ayrı bir iş parçacığında satır satır okunur.
 
+    Böylece boru tamponu dolup süreç takılmaz ve belirli bir satırın (ör. ilk ölçüm satırı)
+    gelmesi sabit bir bekleme yerine zaman aşımıyla beklenebilir. Python alt süreçleri
+    PYTHONUNBUFFERED=1 ile başlatılmalıdır; yoksa satırlar alt sürecin tamponunda bekler.
+    `with` bloğundan çıkarken süreç hâlâ çalışıyorsa öldürülür.
+    """
 
-def kill_if_alive(proc: "subprocess.Popen[bytes]") -> None:
-    if proc.poll() is None:
-        proc.kill()
+    def __init__(self, cmd: Sequence[str], cwd: Optional[str] = None,
+                 env: Optional[Dict[str, str]] = None) -> None:
+        self.proc = subprocess.Popen(list(cmd), cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self._lines: List[str] = []
+        self._eof = False
+        self._cond = threading.Condition()
+        self._reader = threading.Thread(target=self._pump, name="pardus-kabul-cikti",
+                                        daemon=True)
+        self._reader.start()
+
+    @property
+    def pid(self) -> int:
+        return self.proc.pid
+
+    @property
+    def eof(self) -> bool:
+        """Çıktı akışı kapandı mı (süreç sonlandı)?"""
+        with self._cond:
+            return self._eof
+
+    def _pump(self) -> None:
+        stream = self.proc.stdout
         try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
+            if stream is not None:
+                for raw in iter(stream.readline, b""):
+                    with self._cond:
+                        self._lines.append(_decode(raw))
+                        self._cond.notify_all()
+        except (OSError, ValueError):  # akış kapatıldı
             pass
-    if proc.stdout is not None:
-        proc.stdout.close()
+        finally:
+            with self._cond:
+                self._eof = True
+                self._cond.notify_all()
+
+    def _seen(self, needle: str) -> bool:
+        return any(needle in line for line in self._lines)
+
+    def wait_for(self, needle: str, timeout: float) -> bool:
+        """`needle` içeren satır gelene, çıktı bitene veya süre dolana kadar bekler."""
+        with self._cond:
+            self._cond.wait_for(lambda: self._eof or self._seen(needle), timeout)
+            return self._seen(needle)
+
+    def wait_exit(self, timeout: float) -> bool:
+        """Süreç `timeout` saniye içinde sonlandıysa True."""
+        try:
+            self.proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            return False
+        return True
+
+    def output(self, timeout: float = 10.0) -> str:
+        """Şu ana kadarki çıktının tamamı (akışın kapanmasını en çok `timeout` sn bekler)."""
+        self._reader.join(timeout)
+        with self._cond:
+            return "".join(self._lines)
+
+    def stop(self, sig: Optional[int] = None, timeout: float = 30.0) -> Tuple[Optional[int], str]:
+        """İsteğe bağlı sinyal gönderir ve sürecin bitmesini bekler; süre dolarsa sonlandırır.
+
+        (çıkış kodu, tüm çıktı) döndürür.
+        """
+        if sig is not None and self.proc.poll() is None:
+            self.proc.send_signal(sig)
+        if not self.wait_exit(timeout):
+            self.proc.terminate()
+            if not self.wait_exit(5):
+                self.proc.kill()
+                self.proc.wait()
+        return self.proc.returncode, self.output()
+
+    def close(self) -> None:
+        if self.proc.poll() is None:
+            self.proc.kill()
+            self.wait_exit(10)
+        self._reader.join(10)
+        # Okuyucu hâlâ akışı bekliyorsa (çıktıyı tutan torun süreç) kapatmak onu kilitlerdi
+        if self.proc.stdout is not None and not self._reader.is_alive():
+            self.proc.stdout.close()
+
+    def __enter__(self) -> "ChildProcess":
+        return self
+
+    def __exit__(self, *exc_info: Any) -> None:
+        self.close()
+
+
+def not_ready_check(no: str, app: ChildProcess) -> Check:
+    """Uygulama ilk ölçüm satırını yazmadan bitti veya süre doldu: KALDI (çıktı ekte)."""
+    exited = app.eof
+    code, out = app.stop(timeout=1)  # takılan süreç için daha fazla beklemenin anlamı yok
+    reason = (f"uygulama ilk ölçüm satırını yazmadan sonlandı ({exit_text(code)})" if exited else
+              f"uygulama {tr_num(READY_TIMEOUT_S, 0)} sn içinde ilk ölçüm satırını yazmadı")
+    return Check(no, TITLES[no], KALDI, reason, cikti=out)
 
 
 def safe_run(no: str, fn: Callable[[Context], Any], ctx: Any) -> List[Check]:
@@ -421,6 +528,23 @@ def parse_apt_policy(text: str) -> Dict[str, Optional[str]]:
                 value = stripped[len(key):].strip()
                 result[package] = None if (not value or value in _APT_NONE) else value
     return result
+
+
+DPKG_FORMAT = "${Status}\t${Version}\n"
+
+
+def parse_dpkg_status(text: str) -> Optional[str]:
+    """`dpkg-query --show --showformat=DPKG_FORMAT PAKET` çıktısı -> kuruluysa sürüm, değilse None.
+
+    Durum alanının üçüncü sözcüğü "installed" olmalıdır; "deinstall ok config-files"
+    (kaldırılmış, ayarları kalmış) veya "not-installed" kurulu sayılmaz.
+    """
+    for line in text.splitlines():
+        status, _sep, version = line.partition("\t")
+        words = status.split()
+        if len(words) == 3 and words[2] == "installed":
+            return version.strip() or "?"
+    return None
 
 
 def parse_validate_table(text: str) -> List[Dict[str, str]]:
@@ -777,26 +901,6 @@ def check_1_1(ctx: Context) -> Check:
     return Check(no, TITLES[no], GECTI, found, cikti=res.output)
 
 
-QT_PROBE = ("import sys\n"
-            "from PySide6.QtWidgets import QApplication\n"
-            "app = QApplication(sys.argv[:1])\n"
-            "print('QPA=' + app.platformName())\n")
-
-
-def qt_platform_probe(ctx: Context) -> Tuple[bool, str]:
-    """Grafik oturumda QApplication açılabiliyor mu (Qt platform eklentisi)?"""
-    res = run_command([sys.executable, "-c", QT_PROBE], timeout=60, cwd=ctx.tempdir("qt"),
-                      env=child_env(real_gui=True))
-    match = re.search(r"QPA=(\S+)", res.output)
-    if res.ok and match:
-        return True, f"GUI açılış denemesi: Qt platform eklentisi \"{match.group(1)}\" yüklendi"
-    hint = ("`sudo apt install libxcb-cursor0` (pip ile kurulan PySide6; KURULUM.md seçenek B "
-            "notu)" if in_venv() else "`sudo apt install qt6-qpa-plugins`")
-    last = _short(tail_lines(res.output, 1), 160)
-    return False, (f"GUI açılış denemesi başarısız ({res.describe()}"
-                   f"{': ' + last if last else ''}); öneri: {hint}")
-
-
 def check_1_2(ctx: Context) -> Check:
     no = "1.2"
     interpreter = "sanal ortam (seçenek B)" if in_venv() else "sistem Python'u (seçenek A)"
@@ -815,15 +919,8 @@ def check_1_2(ctx: Context) -> Check:
         if widgets is None:
             qt_version, qt_error = None, widgets_error
     if qt_version:
-        details.append(f"PySide6 {qt_version} (QtWidgets yüklendi)")
-        if has_display():
-            ok, text = qt_platform_probe(ctx)
-            details.append(text)
-            if not ok:
-                status = KALDI
-        else:
-            details.append("grafik oturum yok (DISPLAY/WAYLAND_DISPLAY tanımsız): GUI açılış "
-                           "denemesi yapılmadı")
+        details.append(f"PySide6 {qt_version} (QtWidgets yüklendi; grafik oturumda açılış: "
+                       "bkz. 5.9)")
     else:
         status = KALDI
         details.append(f"PySide6.QtWidgets yüklenemedi ({qt_error}): GUI açılmaz; --headless "
@@ -836,27 +933,49 @@ def check_1_3(ctx: Context) -> Check:
     if in_venv():
         return Check(no, TITLES[no], GECTI,
                      "betik sanal ortamda çalışıyor (sys.prefix ≠ sys.base_prefix); bu ortamdaki "
-                     "paketler ve GUI açılış denemesi için bkz. 1.2")
+                     "paketler için bkz. 1.2, GUI açılışı (libxcb-cursor0 notu) için bkz. 5.9")
     return Check(no, TITLES[no], MANUEL, MANUAL_1_3)
+
+
+SYSTEM_DESKTOP = "/usr/share/applications/pardusinsight.desktop"  # .deb paketinin kurduğu
 
 
 def desktop_candidates() -> List[str]:
     data_homes = [os.environ.get("XDG_DATA_HOME") or "",
                   os.path.join(os.path.expanduser("~"), ".local", "share")]
     paths = [os.path.join(h, "applications", "pardusinsight.desktop") for h in data_homes if h]
-    paths.append("/usr/share/applications/pardusinsight.desktop")
+    paths.append(SYSTEM_DESKTOP)
     return list(dict.fromkeys(paths))
 
 
-def check_1_4(ctx: Context) -> List[Check]:
+def deb_package_version(ctx: Context) -> Tuple[bool, Optional[str]]:
+    """(dpkg-query var mı, kuruluysa `pardusinsight` paketinin sürümü)."""
+    dpkg = shutil.which("dpkg-query")
+    if not dpkg:
+        return False, None
+    res = run_command([dpkg, "--show", "--showformat=" + DPKG_FORMAT, "pardusinsight"],
+                      timeout=60, cwd=ctx.tempdir("dpkg"), env=child_env())
+    return True, parse_dpkg_status(res.output)  # bilinmeyen paket: çıkış kodu 1, çıktı boş
+
+
+def check_1_4(ctx: Context) -> Check:
     no = "1.4"
-    manual = Check("1.4b", TITLES["1.4b"], MANUEL, MANUAL_1_4B)
+    has_dpkg, version = deb_package_version(ctx)
     found = [p for p in desktop_candidates() if os.path.isfile(p)]
+    package = ""
+    if has_dpkg:
+        package = (f"`pardusinsight` .deb paketi kurulu (sürüm {version})" if version else
+                   "`pardusinsight` .deb paketi kurulu değil")
     if not found:
-        return [Check(no, TITLES[no], MANUEL, MANUAL_1_4), manual]
+        if version:
+            return Check(no, TITLES[no], KALDI, f"{package} ama menü kaydı yok "
+                                                f"({SYSTEM_DESKTOP} bulunamadı)")
+        return Check(no, TITLES[no], MANUEL, MANUAL_1_4)
     validator = shutil.which("desktop-file-validate")
     problems: List[str] = []
     outputs: List[str] = []
+    if version and SYSTEM_DESKTOP not in found:
+        problems.append(f"paket kurulu ama {SYSTEM_DESKTOP} yok")
     for path in found:
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as handle:
@@ -875,11 +994,15 @@ def check_1_4(ctx: Context) -> List[Check]:
     how = ("desktop-file-validate ile doğrulandı" if validator else
            "desktop-file-validate yok (desktop-file-utils paketi); yalnızca varlık ve Exec/Path "
            "hedefleri denetlendi")
-    detail = f"bulundu: {', '.join(found)}; {how}"
+    detail = f"bulundu: {', '.join(found)}; {how}" + (f"; {package}" if package else "")
     if problems:
-        return [Check(no, TITLES[no], KALDI, detail + "; sorunlar: " + "; ".join(problems),
-                      cikti="\n\n".join(outputs)), manual]
-    return [Check(no, TITLES[no], GECTI, detail, cikti="\n\n".join(outputs)), manual]
+        return Check(no, TITLES[no], KALDI, detail + "; sorunlar: " + "; ".join(problems),
+                     cikti="\n\n".join(outputs))
+    return Check(no, TITLES[no], GECTI, detail, cikti="\n\n".join(outputs))
+
+
+def check_1_5(ctx: Context) -> Check:
+    return Check("1.5", TITLES["1.5"], MANUEL, MANUAL_1_5)
 
 
 # ---------------------------------------------------------------------------
@@ -1021,27 +1144,35 @@ def check_2_4(ctx: Context) -> Check:
     if ps is None:
         return Check(no, TITLES[no], ATLANDI,
                      "psutil yok (bkz. 1.2); elle: uygulama açıkken `ss -tunap | grep python`")
-    proc = subprocess.Popen(app_cmd("--headless", "--ticks", "6", "--interval", "1"),
-                            cwd=ctx.tempdir("2.4"), env=child_env(), stdin=subprocess.DEVNULL,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    try:
-        _sleep(2.5)
-        if proc.poll() is not None:
-            code, out = stop_process(proc)
-            return Check(no, TITLES[no], KALDI,
-                         f"uygulama denetimden önce sonlandı (çıkış kodu {code})", cikti=out)
-        try:
-            count = inet_connection_count(ps, proc.pid)
-        except ps.AccessDenied:
-            stop_process(proc)
-            return Check(no, TITLES[no], ATLANDI, "bağlantılar okunamadı (psutil AccessDenied); "
-                                                  "elle: `ss -tunap | grep python`")
-        code, out = stop_process(proc, timeout=30)
-    finally:
-        kill_if_alive(proc)
-    detail = (f"canlı izleme yapan headless süreçte (ve alt süreçlerinde) 2,5. saniyede {count} "
-              f"ağ bağlantısı (psutil, kind=inet: TCP/UDP, IPv4/IPv6); süreç çıkış kodu {code}")
-    if count == 0 and code == 0:
+    counts: List[int] = []
+    denied = False
+    with ChildProcess(app_cmd("--headless", "--ticks", "6", "--interval", "1"),
+                      cwd=ctx.tempdir("2.4"), env=child_env(UNBUFFERED)) as app:
+        # Sabit bir bekleme yerine ilk ölçüm satırı beklenir: izleme başlamadan bakılmaz
+        if not app.wait_for(READY_MARK, READY_TIMEOUT_S):
+            return not_ready_check(no, app)
+        while True:  # süreç bitene dek ~1 sn arayla
+            try:
+                counts.append(inet_connection_count(ps, app.pid))
+            except ps.AccessDenied:
+                denied = True
+                break
+            except ps.NoSuchProcess:  # tam bu sırada sonlandı
+                break
+            if app.wait_exit(1.0) or len(counts) >= 60:
+                break
+        code, out = app.stop(timeout=30)
+    if denied:
+        return Check(no, TITLES[no], ATLANDI, "bağlantılar okunamadı (psutil AccessDenied); "
+                                              "elle: `ss -tunap | grep python`")
+    if not counts:
+        return Check(no, TITLES[no], KALDI, f"uygulama bağlantıları denetlenemeden sonlandı "
+                                            f"({exit_text(code)})", cikti=out)
+    worst = max(counts)
+    detail = (f"canlı izleme yapan headless süreç (ve alt süreçleri) ilk ölçüm satırından "
+              f"bitene dek ~1 sn arayla {len(counts)} kez denetlendi: en çok {worst} ağ "
+              f"bağlantısı (psutil, kind=inet: TCP/UDP, IPv4/IPv6); süreç {exit_text(code)}")
+    if worst == 0 and code == 0:
         return Check(no, TITLES[no], GECTI, detail)
     return Check(no, TITLES[no], KALDI, detail, cikti=out)
 
@@ -1057,16 +1188,20 @@ def home_snapshot(home: str) -> Dict[str, Set[str]]:
     return snap
 
 
-def new_pardus_entries(before: Dict[str, Set[str]],
-                       after: Dict[str, Set[str]]) -> Tuple[List[str], int]:
-    """(adında "pardus" geçen yeni girişler, toplam yeni giriş sayısı)."""
-    found: List[str] = []
+def new_home_entries(before: Dict[str, Set[str]],
+                     after: Dict[str, Set[str]]) -> Tuple[List[str], int, int]:
+    """(PardusInsight'ın adını taşıyan yeni girişler, adında yalnızca "pardus" geçen diğer
+    yeni giriş sayısı, toplam yeni giriş sayısı)."""
+    own: List[str] = []
+    other_pardus = 0
     total = 0
     for label, names in after.items():
-        new = names - before.get(label, set())
+        new = sorted(names - before.get(label, set()))
         total += len(new)
-        found += [f"{label}/{name}" for name in sorted(new) if "pardus" in name.lower()]
-    return found, total
+        own += [f"{label}/{name}" for name in new if OWN_ENTRY.search(name)]
+        other_pardus += sum(1 for name in new
+                            if "pardus" in name.lower() and not OWN_ENTRY.search(name))
+    return own, other_pardus, total
 
 
 def check_2_5(ctx: Context) -> Check:
@@ -1079,20 +1214,27 @@ def check_2_5(ctx: Context) -> Check:
     before = home_snapshot(home)
     res = run_command(app_cmd("--headless", "--ticks", "5", "--interval", "1"), timeout=90,
                       cwd=home, env=child_env())
-    found, total = new_pardus_entries(before, home_snapshot(home))
+    own, other_pardus, total = new_home_entries(before, home_snapshot(home))
     compared = "~, ~/.config, ~/.local/share ve ~/.cache çalıştırma öncesi/sonrası karşılaştırıldı"
-    if found:
+    if own:
         return Check(no, TITLES[no], KALDI,
-                     f"{compared}; PardusInsight'a ait olabilecek yeni giriş: {', '.join(found)}")
+                     f"{compared}; PardusInsight'ın adını taşıyan yeni giriş: {', '.join(own)}")
     if not res.ok:
         return Check(no, TITLES[no], KALDI, f"headless çalıştırma başarısız ({res.describe()})",
                      cikti=res.output)
-    others = total - len(found)
+    # Başka uygulamaların dosya adları rapora yazılmaz (gizlilik); yalnızca sayılır. Adında
+    # "pardus" geçenler büyük olasılıkla Pardus'un kendi uygulamalarınındır (pardus-update...).
+    notes = []
+    if total:
+        notes.append(f"başka uygulamalardan kaynaklanabilecek {total} yeni giriş sayıldı")
+    if other_pardus:
+        notes.append(f"bunların {other_pardus} tanesinin adında \"pardus\" geçiyor ama "
+                     "PardusInsight'ın adı geçmiyor (ör. Pardus'un kendi uygulamaları)")
     return Check(no, TITLES[no], GECTI,
                  f"`--headless --ticks 5` ev dizininde (cwd=~) dışa aktarmasız çalıştı; "
-                 f"{compared}; adında \"pardus\" geçen yeni giriş yok"
-                 + (f" (başka uygulamalardan kaynaklanabilecek {others} yeni giriş sayıldı; adları "
-                    "rapora yazılmadı)" if others else ""))
+                 f"{compared}; PardusInsight'ın adını (pardusinsight, pardus-insight…) taşıyan "
+                 f"yeni giriş yok"
+                 + (f" ({'; '.join(notes)}; adları rapora yazılmadı)" if notes else ""))
 
 
 def run_pytest(ctx: Context, test_file: str) -> CommandResult:
@@ -1257,6 +1399,9 @@ def long_run_readings(service: MonitorService, minutes: int = LONG_RUN_MINUTES,
             readings.append((len(readings) + 1, len(service.history), rss()))
             if on_minute is not None:
                 on_minute(readings)
+        # record_samples'tan farklı olarak kaçırılan turlar (uzun tur, VM duraklaması) bilerek
+        # art arda koşturulur: örnek değerleri burada önemsizdir, tampondaki örnek sayısı ise
+        # 30 dk'lık pencerede sabit kalır ve "son 5 dk'da ±2" ölçütü duraklamadan etkilenmez.
         next_tick += interval
         _sleep(max(0.0, next_tick - _clock()))
     return readings
@@ -1317,6 +1462,8 @@ def check_4_2(ctx: Context) -> Check:
         progress(f"      4.2: {minute}/{LONG_RUN_MINUTES} dk · tampon {length} örnek · RSS "
                  f"{fmt_bytes(rss)}")
 
+    # İlk dakika dolmadan kesilirse de kısmi raporda 4.2 satırı bulunsun
+    ctx.partial = Check(no, TITLES[no], ATLANDI, "Ctrl+C ile ilk dakika dolmadan kesildi")
     readings = long_run_readings(service, on_minute=on_minute)
     ok, detail = evaluate_long_run(readings, capacity)
     detail += f"; tampondaki süre {fmt_duration(service.history.duration_s())} (30 dk sınırı)"
@@ -1475,15 +1622,16 @@ def check_5_5(ctx: Context) -> Check:
 
 
 def record_samples(service: MonitorService, seconds: float,
-                   on_progress: Optional[Callable[[float, int], None]] = None
-                   ) -> List[SystemSample]:
+                   on_progress: Optional[Callable[[float, int], None]] = None,
+                   into: Optional[List[SystemSample]] = None) -> List[SystemSample]:
     """Servisi örnekleme aralığıyla `seconds` boyunca çalıştırır ve tüm örnekleri döndürür.
 
     Örnekler geçmiş tamponundan değil doğrudan turlardan toplanır; böylece 30 dk'dan uzun
-    kayıtlarda da hiçbir örnek düşmez.
+    kayıtlarda da hiçbir örnek düşmez. `into` verilirse örnekler o listeye eklenir: Ctrl+C
+    ile kesilen kayıtta o ana kadarki örnekler kaybolmaz.
     """
     interval = service.settings.sample_interval_s
-    samples: List[SystemSample] = []
+    samples: List[SystemSample] = [] if into is None else into
     start = _clock()
     next_tick = start
     next_report = 60.0
@@ -1494,18 +1642,55 @@ def record_samples(service: MonitorService, seconds: float,
         elapsed = _clock() - start
         if on_progress is not None and elapsed >= next_report:
             on_progress(elapsed, len(samples))
-            next_report += 60.0
+            next_report = (elapsed // 60.0 + 1.0) * 60.0
         if elapsed >= seconds:
             return samples
-        next_tick += interval
+        # Uzun süren bir turdan veya VM duraklamasından sonra kaçırılan turlar art arda
+        # koşturulmaz (cli.run_headless ile aynı): milisaniye arayla alınan, CPU % ve G/Ç
+        # oranları gürültülü örnek patlaması kalibrasyonda yanlış uyarı ve eşik önerisi üretirdi.
+        next_tick = max(next_tick + interval, _clock())
         _sleep(max(0.0, next_tick - _clock()))
 
 
+RECORDING_SOURCE = "linux (pardus_kabul.py kalibrasyon kaydı)"
+
+
+def save_recording(folder: str, samples: Sequence[SystemSample], settings: AppSettings,
+                   partial: bool = False) -> Tuple[str, List[SystemSample]]:
+    """Kaydı `folder` altına JSON rapor olarak yazar ve "Kayıt/senaryo aç" yoluyla geri okur.
+
+    (dosyanın mutlak yolu, geri okunan örnekler) döndürür; hata olursa istisna fırlatır.
+    """
+    os.makedirs(folder, exist_ok=True)
+    name = time.strftime("olagan_kullanim_%Y%m%d_%H%M%S") + ("_yarim" if partial else "")
+    path = os.path.abspath(os.path.join(folder, name + ".json"))
+    alerts = replay(samples, settings.analysis).alert_log()
+    write_json_report(path, build_report(samples, alerts, settings_to_dict(settings),
+                                         source=RECORDING_SOURCE), compact=True)
+    return path, load_json_report(path).samples
+
+
+def interrupted_recording(folder: str, samples: Sequence[SystemSample], settings: AppSettings,
+                          elapsed: float) -> Check:
+    """Ctrl+C ile kesilen kalibrasyon kaydı: o ana kadarki örnekler --kayit-klasoru'na yazılır."""
+    no = "5.6"
+    try:
+        path, _stored = save_recording(folder, samples, settings, partial=True)
+        kept = f"o ana kadarki kayıt saklandı: {path}"
+    except Exception as exc:
+        kept = f"o ana kadarki kayıt saklanamadı ({type(exc).__name__}: {exc})"
+    progress(f"      {kept}")
+    return Check(no, TITLES[no], ATLANDI, f"kalibrasyon kaydı Ctrl+C ile {fmt_duration(elapsed)} "
+                                          f"sonra kesildi ({len(samples)} örnek); {kept}")
+
+
 def take_recording(ctx: Context) -> LiveRecording:
+    no = "5.6"
     seconds = float(ctx.args.kalibrasyon_suresi)
+    folder = ctx.args.kayit_klasoru
     settings = AppSettings()
     service = build_live_service(settings)
-    no = "5.6"
+    samples: List[SystemSample] = []
     ctx.partial = Check(no, TITLES[no], ATLANDI, "kalibrasyon kaydı Ctrl+C ile kesildi; kayıt "
                                                  "saklanmadı")
     progress(f"      Kalibrasyon kaydı başladı ({fmt_duration(seconds)}): bu sürede masaüstünü "
@@ -1517,30 +1702,39 @@ def take_recording(ctx: Context) -> LiveRecording:
                             f"({count} örnek); kayıt saklanmadı")
         progress(f"      kayıt: {fmt_duration(elapsed)} / {fmt_duration(seconds)} · {count} örnek")
 
-    samples = record_samples(service, seconds, on_progress)
-    folder = ctx.args.kayit_klasoru
-    if folder:
-        os.makedirs(folder, exist_ok=True)
-    path = os.path.join(folder or ctx.tempdir("kayit"),
-                        time.strftime("olagan_kullanim_%Y%m%d_%H%M%S.json"))
-    alerts = replay(samples, settings.analysis).alert_log()
-    write_json_report(path, build_report(samples, alerts, settings_to_dict(settings),
-                                         source="linux (pardus_kabul.py kalibrasyon kaydı)"),
-                      compact=True)
-    data = load_json_report(path)  # kaydedilen dosya geri okunabiliyor mu
+    started = _clock()
+    try:
+        record_samples(service, seconds, on_progress, into=samples)
+    except KeyboardInterrupt:
+        if folder and samples:
+            ctx.partial = interrupted_recording(folder, samples, settings, _clock() - started)
+        raise
+    save_error = ""
+    path: Optional[str] = None
+    try:
+        path, stored = save_recording(folder or ctx.tempdir("kayit"), samples, settings)
+    except Exception as exc:  # 30 dk'lık kayıt bir yazma/okuma hatası yüzünden kaybolmasın
+        path, stored = None, list(samples)
+        where = f"--kayit-klasoru'na ({folder})" if folder else "geçici dizine"
+        save_error = f"kayıt {where} kaydedilemedi ({type(exc).__name__}: {exc})"
+        progress(f"      {save_error}; örnekler bellekten analiz ediliyor.")
     ctx.partial = None
-    stamps = [s.timestamp for s in data.samples]
+    stamps = [s.timestamp for s in stored]
     duration = stamps[-1] - stamps[0] if len(stamps) > 1 else 0.0
-    if folder:
+    if folder and path:
         progress(f"      kayıt saklandı: {path}")
-    return LiveRecording(samples=data.samples, duration_s=duration,
-                         path=os.path.abspath(path) if folder else None)
+    return LiveRecording(samples=stored, duration_s=duration, path=path if folder else None,
+                         save_error=save_error)
 
 
 def calibration_recording(ctx: Context) -> Optional[LiveRecording]:
-    """Canlı kaydı bir kez alır (5.6 ve 6 paylaşır). Linux dışında None."""
+    """Canlı kaydı bir kez alır (5.6 ve 6 paylaşır). Linux dışında None.
+
+    Kayıt alınamazsa istisna ilk çağıranda (5.6) KALDI olur; 6 bunu ctx.recording_error'dan
+    görüp ATLANDI döner, kayıt yeniden denenmez.
+    """
     if ctx.recording_error is not None:
-        raise ctx.recording_error  # 5.6'da başarısız olan kayıt 6'da yeniden denenmez
+        raise ctx.recording_error
     if ctx.recording is not None:
         return ctx.recording
     if not is_linux():
@@ -1556,6 +1750,8 @@ def calibration_recording(ctx: Context) -> Optional[LiveRecording]:
 def _recording_location(rec: LiveRecording) -> str:
     if rec.path:
         return f"kayıt: {rec.path} (süreç adları içerir; depoya eklemeden önce göz atın)"
+    if rec.save_error:
+        return f"{rec.save_error}; örnekler bellekten analiz edildi"
     return "kayıt geçici dizindeydi ve silindi (saklamak için --kayit-klasoru)"
 
 
@@ -1599,25 +1795,97 @@ def check_5_8(ctx: Context) -> Check:
     folder = ctx.tempdir("5.8")
     res = run_command(app_cmd("--headless", "--duration", "60"), timeout=200, cwd=folder,
                       env=child_env())
-    lines = sum(1 for line in res.output.splitlines() if "CPU" in line)
+    lines = sum(1 for line in res.output.splitlines() if READY_MARK in line)
     ok_a = res.ok and lines >= 25
-    proc = subprocess.Popen(app_cmd("--headless"), cwd=folder, env=child_env(),
-                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT)
-    try:
-        _sleep(3.0)
-        code, out = stop_process(proc, signal.SIGINT, timeout=20)
-    finally:
-        kill_if_alive(proc)
+    with ChildProcess(app_cmd("--headless"), cwd=folder, env=child_env(UNBUFFERED)) as app:
+        # SIGINT ancak ilk ölçüm satırından sonra gönderilir: uygulama ancak o zaman
+        # run_headless'ın try bloğundadır (yavaş VM'de sabit bir bekleme yetmeyebilir)
+        ready = app.wait_for(READY_MARK, READY_TIMEOUT_S)
+        if ready:
+            code, out = app.stop(signal.SIGINT, timeout=20)
+        else:
+            code, out = app.stop(timeout=1)
     stopped = "Durduruldu" in out
-    ok_b = code == 0 and stopped
+    ok_b = ready and code == 0 and stopped
     verdict_a, verdict_b = ("tamam" if ok_a else "SORUN"), ("tamam" if ok_b else "SORUN")
+    if ready:
+        part_b = (f"(b) ilk ölçüm satırından sonra SIGINT (Ctrl+C): {exit_text(code)}, "
+                  f"\"Durduruldu\" iletisi {'var' if stopped else 'YOK'} → {verdict_b}")
+    else:
+        part_b = (f"(b) uygulama {tr_num(READY_TIMEOUT_S, 0)} sn içinde ilk ölçüm satırını "
+                  f"yazmadı, SIGINT gönderilmedi ({exit_text(code)}) → {verdict_b}")
     detail = (f"(a) `--headless --duration 60`: {res.describe()}, {lines} ölçüm satırı (en az 25) "
-              f"→ {verdict_a}; (b) 3 sn sonra SIGINT (Ctrl+C): çıkış kodu {code}, \"Durduruldu\" "
-              f"iletisi {'var' if stopped else 'YOK'} → {verdict_b}")
+              f"→ {verdict_a}; {part_b}")
     output = ("(a) son satırlar:\n" + tail_lines(res.output, 8) + "\n\n(b) Ctrl+C denemesi:\n"
               + out.strip())
     return Check(no, TITLES[no], GECTI if ok_a and ok_b else KALDI, detail, cikti=output)
+
+
+# Gerçek giriş noktası (run_gui) canlı izlemeyle açılır, GUI_PROBE_SECONDS sonra kendiliğinden
+# kapanır. Önce QApplication kurulur: platform eklentisinin adı yazdırılır ve run_gui aynı
+# uygulama nesnesini kullanır.
+GUI_PROBE = """\
+import sys
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication
+
+app = QApplication(sys.argv[:1])
+print("QPA=" + app.platformName(), flush=True)
+from pardusinsight.config import AppSettings
+from pardusinsight.ui.app import run_gui
+
+QTimer.singleShot(int(float(sys.argv[1]) * 1000), app.quit)
+code = run_gui(AppSettings())
+print("CIKIS=%d" % code, flush=True)
+sys.exit(code)
+"""
+
+
+def _qt_problem_line(output: str) -> str:
+    """Qt'nin açılış hatasını anlatan satır (yoksa son satır)."""
+    lines = [ln.strip() for ln in output.splitlines() if ln.strip()]
+    for line in lines:
+        if "Could not" in line or "qt.qpa" in line or "Error" in line:
+            return _short(line, 160)
+    return _short(lines[-1], 160) if lines else ""
+
+
+def check_5_9(ctx: Context) -> Check:
+    no = "5.9"
+    if not is_linux():
+        return Check(no, TITLES[no], ATLANDI, "yalnızca Linux masaüstü oturumunda (canlı izleme "
+                                              "gerekir)")
+    if not has_display():
+        return Check(no, TITLES[no], ATLANDI, "grafik oturum yok (DISPLAY/WAYLAND_DISPLAY "
+                                              "tanımsız); XFCE oturumunda çalıştırın")
+    if module_version("PySide6.QtWidgets")[0] is None:
+        return Check(no, TITLES[no], ATLANDI, "PySide6 yok (bkz. 1.2)")
+    progress(f"      Bir PardusInsight penceresi ~{GUI_PROBE_SECONDS} sn açık kalıp kendiliğinden "
+             "kapanacak.")
+    res = run_command([sys.executable, "-c", GUI_PROBE, str(GUI_PROBE_SECONDS)], timeout=120,
+                      cwd=ctx.tempdir("5.9"), env=child_env(real_gui=True))
+    match = re.search(r"QPA=(\S+)", res.output)
+    plugin = match.group(1) if match else None
+    closed = re.search(r"CIKIS=0\b", res.output) is not None
+    traceback = "Traceback" in res.output
+    if res.ok and plugin and closed and not traceback:
+        note = "" if plugin == "xcb" else " (XFCE/X11 oturumunda beklenen: xcb)"
+        return Check(no, TITLES[no], GECTI,
+                     f"Qt platform eklentisi \"{plugin}\"{note}; arayüz canlı izlemeyle "
+                     f"{GUI_PROBE_SECONDS} sn açık kaldı ve çökmeden kendiliğinden kapandı")
+    problems = [] if res.ok else [res.describe()]
+    if traceback:
+        problems.append("çıktıda Traceback var")
+    if plugin is None:
+        hint = ("`sudo apt install libxcb-cursor0` (pip ile kurulan PySide6; KURULUM.md seçenek "
+                "B notu)" if in_venv() else "`sudo apt install qt6-qpa-plugins`")
+        reason = _qt_problem_line(res.output)
+        detail = (f"Qt platform eklentisi yüklenemedi ({'; '.join(problems) or 'çıktı yok'}"
+                  f"{': ' + reason if reason else ''}); öneri: {hint}")
+    else:
+        detail = (f"Qt platform eklentisi \"{plugin}\" yüklendi ama arayüz çalışırken sorun "
+                  f"çıktı ({'; '.join(problems) or 'kapanış iletisi yok'}; çıktı ekte)")
+    return Check(no, TITLES[no], KALDI, detail, cikti=res.output)
 
 
 # ---------------------------------------------------------------------------
@@ -1661,9 +1929,16 @@ def check_6(ctx: Context) -> Check:
         return Check(no, TITLES[no], ATLANDI, f"kalibrasyon modülü bulunamadı ({exc})")
     if ctx.args.kalibrasyon_suresi is None:
         return Check(no, TITLES[no], MANUEL, MANUAL_6)
+    if ctx.recording_error is not None:  # 5.6'da KALDI olarak raporlandı; ikinci kez sayılmaz
+        err = ctx.recording_error
+        return Check(no, TITLES[no], ATLANDI,
+                     f"kayıt alınamadı (bkz. 5.6): {type(err).__name__}: {err}")
     rec = calibration_recording(ctx)
     if rec is None:
         return Check(no, TITLES[no], ATLANDI, "canlı kayıt yalnızca Linux'ta alınabilir")
+    if len(rec.samples) < 2:
+        return Check(no, TITLES[no], ATLANDI,
+                     f"kayıtta yeterli örnek yok ({len(rec.samples)}; bkz. 5.6)")
     result = calibrate([Recording(label=f"olağan kullanım ({fmt_duration(rec.duration_s)})",
                                   samples=rec.samples, heavy=False)], base=None)
     summary = summarize_recommendations(list(getattr(result, "recommendations", ()) or ()))
@@ -1684,6 +1959,50 @@ def fenced(text: str, info: str = "text") -> List[str]:
     longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
     fence = "`" * max(3, longest + 1)
     return [fence + info, text, fence]
+
+
+_MD_HEADING = re.compile(r"^ {0,3}(#{1,6})(?=[ \t]|$)")
+_MD_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def embed_markdown(body: str, heading: str) -> List[str]:
+    """Markdown ekini "### <heading>" altına yerleştirir; ekin başlıkları alt düzeye iner.
+
+    Ek bir başlıkla başlıyorsa (ör. kalibrasyonun "## Eşik kalibrasyonu") o başlık madde
+    başlığıyla aynı işi gördüğü için atılır; kalan başlıklar en üstteki "####" olacak biçimde
+    kaydırılır. Böylece ek, "## Ekler" bölümünü bölen ikinci bir "##" başlığı oluşturmaz.
+    Kod çitleri içindeki satırlara (ör. JSON ya da "# yorum") dokunulmaz.
+    """
+    lines = body.split("\n")
+    levels: Dict[int, int] = {}  # satır no -> başlık düzeyi (kod çiti dışındakiler)
+    fence: Optional[str] = None
+    for i, line in enumerate(lines):
+        if fence is not None:
+            stripped = line.strip()
+            if len(stripped) >= len(fence) and set(stripped) == {fence[0]}:
+                fence = None  # kapanış çiti
+            continue
+        opening = _MD_FENCE.match(line)
+        if opening:
+            fence = opening.group(1)
+            continue
+        match = _MD_HEADING.match(line)
+        if match:
+            levels[i] = len(match.group(1))
+    first = next((i for i, line in enumerate(lines) if line.strip()), None)
+    drop = first if first is not None and first in levels else None
+    rest = [level for i, level in levels.items() if i != drop]
+    shift = 4 - min(rest) if rest else 0
+    out: List[str] = []
+    for i, line in enumerate(lines):
+        if i == drop:
+            continue
+        if i in levels:
+            text = line.lstrip(" ")[levels[i]:]
+            line = "#" * min(6, max(4, levels[i] + shift)) + text
+        out.append(line)
+    text = "\n".join(out).strip("\n")
+    return [f"### {heading}", ""] + ([text, ""] if text else [])
 
 
 def render_markdown(checks: Sequence[Check], env_rows: Sequence[Tuple[str, str]] = (),
@@ -1766,12 +2085,11 @@ def render_markdown(checks: Sequence[Check], env_rows: Sequence[Tuple[str, str]]
         lines += ["_Ek çıktı yok._", ""]
     for c in attached:
         body = clean(c.cikti).replace("\r\n", "\n").strip("\n")
-        if c.cikti_md:
-            if not body.lstrip().startswith("#"):  # kendi başlığı yoksa madde başlığı eklenir
-                lines += [f"### {c.no} – {inline(c.baslik)}", ""]
-            lines += [body, ""]
+        heading = f"{c.no} – {inline(c.baslik)}"
+        if c.cikti_md:  # kalibrasyon raporu: kod bloğu olmadan, başlıkları bir alt düzeyde
+            lines += embed_markdown(body, heading)
         else:
-            lines += [f"### {c.no} – {inline(c.baslik)}", ""] + fenced(body) + [""]
+            lines += [f"### {heading}", ""] + fenced(body) + [""]
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
@@ -1783,17 +2101,18 @@ def render_markdown(checks: Sequence[Check], env_rows: Sequence[Tuple[str, str]]
 def plan() -> List[Tuple[str, Callable[[Context], Any]]]:
     """Madde sırası (adlar çağrı anında çözülür; testlerde tek tek değiştirilebilir)."""
     return [("1.1", check_1_1), ("1.2", check_1_2), ("1.3", check_1_3), ("1.4", check_1_4),
+            ("1.5", check_1_5),
             ("2.1", check_2_1), ("2.2", check_2_2), ("2.3", check_2_3), ("2.4", check_2_4),
             ("2.5", check_2_5), ("2.6", check_2_6),
             ("3.1", check_3_1), ("3.2", check_3_2), ("3.3", check_3_3), ("3.4", check_3_4),
             ("4.1", check_4_1), ("4.2", check_4_2), ("4.3", check_4_3),
             ("5.1", check_5_1), ("5.2", check_5_2), ("5.3", check_5_3), ("5.4", check_5_4),
             ("5.5", check_5_5), ("5.6", check_5_6), ("5.7", check_5_7), ("5.8", check_5_8),
-            ("6", check_6)]
+            ("5.9", check_5_9), ("6", check_6)]
 
 
 def estimated_seconds(args: argparse.Namespace) -> float:
-    total = 45.0
+    total = 45.0 + (GUI_PROBE_SECONDS + 5 if has_display() else 0)  # 5.9
     if not args.hizli:
         total += 65 + 75 + 70 + (70 if args.gui else 0)  # 4.1, 5.5, 5.8, 4.1b
     if args.uzun:
@@ -1822,20 +2141,50 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def folder_problem(path: str) -> Optional[str]:
+    """Klasör yazılabilir mi, yoksa oluşturulabilir mi? Sorun yoksa None (diske yazmaz).
+
+    Kayıt klasörü ancak kayıt bittikten sonra oluşturulur; 30 dk'lık bir kayıt, sonunda
+    yazılamayan bir klasör yüzünden boşa gitmesin diye hiçbir kontrol başlamadan denetlenir.
+    """
+    path = os.path.abspath(path)
+    if os.path.isdir(path):
+        return None if os.access(path, os.W_OK | os.X_OK) else f"klasöre yazılamıyor: {path}"
+    if os.path.exists(path):
+        return f"bir klasör olmalı, dosya var: {path}"
+    parent = os.path.dirname(path)
+    while not os.path.exists(parent) and os.path.dirname(parent) != parent:
+        parent = os.path.dirname(parent)
+    if not os.path.exists(parent):
+        return f"klasör oluşturulamaz, {parent} yok"
+    if not os.path.isdir(parent):
+        return f"klasör oluşturulamaz, yolun bir parçası dosya: {parent}"
+    if not os.access(parent, os.W_OK | os.X_OK):
+        return f"klasör oluşturulamaz, {parent} klasörüne yazılamıyor"
+    return None
+
+
 def _check_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
-    if args.kalibrasyon_suresi is not None and args.kalibrasyon_suresi <= 0:
-        parser.error("--kalibrasyon-suresi pozitif bir saniye değeri olmalı")
+    seconds = args.kalibrasyon_suresi
+    if seconds is not None and (not math.isfinite(seconds) or seconds <= 0):
+        parser.error("--kalibrasyon-suresi pozitif, sonlu bir saniye değeri olmalı")
+    if seconds is not None and seconds > MAX_CALIBRATION_S:
+        parser.error(f"--kalibrasyon-suresi en çok {MAX_CALIBRATION_S:.0f} sn (4 sa) olabilir; "
+                     "liste 1800 sn öneriyor")
     if args.kayit_klasoru:
-        if args.kalibrasyon_suresi is None:
+        if seconds is None:
             parser.error("--kayit-klasoru yalnızca --kalibrasyon-suresi ile kullanılır")
-        if os.path.exists(args.kayit_klasoru) and not os.path.isdir(args.kayit_klasoru):
-            parser.error(f"--kayit-klasoru bir klasör olmalı: {args.kayit_klasoru}")
+        problem = folder_problem(args.kayit_klasoru)
+        if problem:
+            parser.error(f"--kayit-klasoru: {problem}")
     if args.cikti:
         if os.path.isdir(args.cikti):
             parser.error("--cikti bir dosya yolu olmalı, klasör değil")
         parent = os.path.dirname(os.path.abspath(args.cikti))
         if not os.path.isdir(parent):
             parser.error(f"--cikti: klasör yok: {parent}")
+        if not os.access(parent, os.W_OK):
+            parser.error(f"--cikti: klasöre yazılamıyor: {parent}")
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
