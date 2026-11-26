@@ -41,6 +41,13 @@ Her üyenin katkısının Git kayıtlarında görünmesi için önerilen akış:
      ekran görüntüleri; demo videosu.
    - **Oğuz:** Pardus VM'de eşik kalibrasyonu (KURALLAR.md); PARDUS_DOGRULAMA.md listesinin
      doldurulması; paketleme.
+     *Durum (26.11.2026):*
+     - Tamamlandı: `.deb` paketleme; CI'da resmî Pardus 25.1/25.2 kapsayıcılarında testler,
+       paket kurulumu, kabul betiği ve 35 dk uzun koşu; kalibrasyon aracı ve yöntemi;
+       PARDUS_DOGRULAMA'nın kapsayıcıda doğrulanabilen maddeleri; test raporu.
+     - Kalan, XFCE VM gerektiren tek adım: `python3 scripts/pardus_kabul.py --gui
+       --kalibrasyon-suresi 1800 --kayit-klasoru docs/kayitlar --cikti docs/PARDUS_SONUCLARI.md`
+       ve raporun listelediği elle kontroller (menü, koyu tema, LibreOffice).
 3. Birleştirmeyi Pull Request ile yapın. Her PR'ı en az bir diğer üye incelesin (PDF: haftalık kod incelemesi).
 4. Her üye kendi modülünü sunumda açıklayabilecek düzeyde okumalıdır. Anlaşılmayan kısımlar
    sadeleştirilmeli veya belgelenmelidir.
