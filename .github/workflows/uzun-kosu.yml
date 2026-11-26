@@ -65,11 +65,10 @@ jobs:
           cp /tmp/uzun.md ../uzun.md
           satir=$(grep -E '^\| 4\.2 ' ../uzun.md || true)
           echo "::notice title=Uzun koşu 4.2::$satir"
-          split -C 30000 ../uzun.md ../uzun-parca-
-          for f in ../uzun-parca-*; do
-            printf '::notice title=Uzun koşu raporu %s::%s\n' "$(basename "$f")" \
-              "$(sed -e 's/%/%25/g' "$f" | sed -e ':a;N;$!ba;s/\n/%0A/g')"
-          done
+          # Dakikalık tablo (ekteki 4.2 bloğu) ayrı iş notu: GitHub iş notlarını ~4 KB'ta keser
+          blok=$(awk '/^### 4\.2 /{f=1;next} /^### /{f=0} f' ../uzun.md)
+          printf '::notice title=Uzun koşu dakikalık tablo::%s\n' \
+            "$(printf '%s\n' "$blok" | sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g')"
           echo "$satir" | grep -q "GEÇTİ"
       - name: Çıktıları sakla
         if: always()

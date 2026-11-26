@@ -114,7 +114,7 @@ jobs:
             python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest > apt-policy.txt 2>&1
           apt-get install -y -q --no-install-recommends ca-certificates git \
             python3 python3-psutil python3-pyside6.qtcore python3-pyside6.qtgui \
-            python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest fonts-dejavu-core \
+            python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest fonts-dejavu-core procps \
             >> apt.log 2>&1 || exit 1
           python3 -c 'import platform, psutil, PySide6; print(f"Python {platform.python_version()}, PySide6 {PySide6.__version__}, psutil {psutil.__version__}")' > surumler.txt 2>&1 || exit 1
           echo "::notice title=Pardus paketleri ${{ matrix.surum }}::$(cat surumler.txt)"
@@ -143,22 +143,6 @@ jobs:
           runuser -u ogrenci -- python3 scripts/perf_check.py --duration 60 2>&1 | tee ../perf.txt
           runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 scripts/perf_check.py --gui --duration 60 2>&1 | tee -a ../perf.txt
           echo "::notice title=Performans Pardus ${{ matrix.surum }}::$(sed -e 's/%/%25/g' ../perf.txt | sed -e ':a;N;$!ba;s/\n/%0A/g')"
-      - name: Pardus kabul betiği (otomatik maddeler, standart kullanıcı)
-        working-directory: kaynak
-        run: |
-          rc=0
-          runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 scripts/pardus_kabul.py \
-            --cikti /tmp/kabul.md > ../kabul-cikti.txt 2>&1 || rc=$?
-          cp /tmp/kabul.md ../kabul.md 2>/dev/null || true
-          ozet=$(sed -n '/^## Özet/,/^## Elle/p' ../kabul.md | grep -v '^## ' | grep . | tr '\n' ' ')
-          echo "::notice title=Kabul betiği Pardus ${{ matrix.surum }} (çıkış $rc)::$ozet"
-          # Raporun tamamı iş notlarına parça parça yazılır (günlükler oturum açmadan okunamıyor)
-          split -C 30000 ../kabul.md ../kabul-parca-
-          for f in ../kabul-parca-*; do
-            printf '::notice title=Kabul raporu %s::%s\n' "$(basename "$f")" \
-              "$(sed -e 's/%/%25/g' "$f" | sed -e ':a;N;$!ba;s/\n/%0A/g')"
-          done
-          exit $rc
       - name: .deb paketini oluştur ve incele
         working-directory: kaynak
         run: |
@@ -201,6 +185,25 @@ jobs:
           echo "çıkış kodu: $rc (124 = 20 sn boyunca açık kaldı, zaman aşımıyla kapatıldı)" | tee -a "$OUT/gui.txt"
           test "$rc" -eq 124
           echo "::notice title=GUI xcb Pardus ${{ matrix.surum }}::Arayüz xvfb altında 20 sn çökmeden çalıştı"
+      - name: Pardus kabul betiği (otomatik maddeler, standart kullanıcı)
+        # .deb kurulduktan sonra çalışır: menü kaydı (1.4) desktop-file-validate ile denetlenir
+        working-directory: kaynak
+        run: |
+          rc=0
+          runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 scripts/pardus_kabul.py \
+            --cikti /tmp/kabul.md > ../kabul-cikti.txt 2>&1 || rc=$?
+          cp /tmp/kabul.md ../kabul.md 2>/dev/null || true
+          ozet=$(sed -n '/^## Özet/,/^## Elle/p' ../kabul.md | grep -v '^## ' | grep . | tr '\n' ' ')
+          echo "::notice title=Kabul betiği Pardus ${{ matrix.surum }} (çıkış $rc)::$ozet"
+          # GitHub iş notlarını ~4 KB'ta kestiği için raporun ana bölümü (eklerden önceki
+          # kısım) 3,5 KB'lık parçalarla yazılır; tamamı yapıt (artifact) olarak saklanır.
+          sed '/^## Ekler/,$d' ../kabul.md > ../kabul-ana.md
+          split -C 3500 ../kabul-ana.md ../kabul-parca-
+          for f in $(ls ../kabul-parca-* | head -n 8); do
+            printf '::notice title=Kabul raporu %s::%s\n' "$(basename "$f")" \
+              "$(sed -e 's/%/%25/g' "$f" | sed -e ':a;N;$!ba;s/\n/%0A/g')"
+          done
+          exit $rc
       - name: Kaldırma ve artık dosya denetimi
         run: |
           apt-get purge -y -q pardusinsight 2>&1 | tee kaldirma.txt
@@ -224,4 +227,5 @@ jobs:
           path: |
             dist/*.deb
             *.txt
+            kabul.md
           if-no-files-found: ignore
