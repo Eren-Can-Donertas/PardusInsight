@@ -253,16 +253,20 @@ class SustainedCpuRule(Rule):
         notes = [COMMON_UNCERTAINTY,
                  "Yüksek CPU kullanımı tek başına sorun değildir; derleme, video işleme gibi "
                  "beklenen işler de bu uyarıyı tetikleyebilir.",
-                 "Süreç CPU değerleri örnekleme anlarındaki ölçümlerdir; örnekler arasında başlayıp "
+                 "Süreç CPU değerleri örnekleme anlarındaki ölçümlerdir; örnekler arasında "
+                 "başlayıp "
                  "biten kısa ömürlü süreçler listede görünmeyebilir."]
         if steal is not None and steal >= 5:
             notes.append("Steal payı yüksek: sanal makinenin ana sistemde CPU için beklediğini "
                          "gösterebilir.")
         notes.append(_coverage_note(windows, "cpu_percent", s))
+        source_text, source_evidence = _cpu_source_attribution(period, overall, start, end, s)
+        if source_evidence is not None:
+            evidence.append(source_evidence)
         summary = (
             f"Son {fmt_duration(end - start)} boyunca her pencerede örneklerin en az "
             f"{fmt_pct(s.cpu_min_fraction * 100, 0)}'i {fmt_pct(s.cpu_high_pct, 0)} CPU eşiğinin "
-            f"üzerindeydi (ortalama {fmt_pct(overall)}).")
+            f"üzerindeydi (ortalama {fmt_pct(overall)}). {source_text}")
         return RuleOutcome(True, "Kalıcı CPU yoğunluğu koşulları sağlandı.", AlertDraft(
             title=self.title, severity=SEVERITY_WARNING, confidence=confidence,
             summary=summary, window_start=start, window_end=end, evidence=tuple(evidence),
@@ -297,6 +301,39 @@ def _aggregate_top(period: Sequence[SystemSample], list_attr: str, value_attr: s
         count = max(len(period), 1)
         totals = {k: v / count for k, v in totals.items()}
     return sorted(totals.items(), key=lambda kv: kv[1], reverse=True)[:n]
+
+
+def _cpu_source_attribution(period: Sequence[SystemSample], overall: float, start: float,
+                            end: float, s: AnalysisSettings) -> Tuple[str, Optional[Evidence]]:
+    """Yükün tek bir süreç adından mı geldiğini, yoksa dağınık mı olduğunu açıklar.
+
+    Aynı adlı süreçler (ör. paralel derleyici örnekleri) tek grup sayılır. Grubun dönem
+    ortalaması toplam CPU ortalamasının ``cpu_process_share`` oranını aşarsa yoğunluk
+    "süreç kaynaklı" olarak nitelenir. Süreç listesi yoksa yalnızca belirsizlik bildirilir.
+    """
+    per_process = _aggregate_top(period, "top_cpu", "cpu_percent", "mean", n=50)
+    if not per_process or overall <= 0:
+        return ("Süreç verisi olmadığından yükün kaynağı belirlenemedi.", None)
+    groups: Dict[str, Tuple[float, int]] = {}
+    for (_pid, name), value in per_process:
+        total, count = groups.get(name, (0.0, 0))
+        groups[name] = (total + value, count + 1)
+    name, (value, count) = max(groups.items(), key=lambda kv: kv[1][0])
+    share = min(value / overall, 1.0)
+    dominant = share >= s.cpu_process_share
+    label = f"{name}" + (f" ({count} süreç)" if count > 1 else "")
+    evidence = Evidence(
+        metric="top_process_share", label=f"En yoğun süreç grubunun payı: {label}",
+        value=round(share * 100.0, 1), threshold=round(s.cpu_process_share * 100.0, 1),
+        comparison=">=", unit="%", window_start=start, window_end=end, satisfied=dominant,
+        role="context", note="Süreç ortalaması / toplam CPU ortalaması")
+    if dominant:
+        text = (f"Yükün yaklaşık {fmt_pct(share * 100, 0)}'i {label} kaynaklı; yoğunluk büyük "
+                "olasılıkla bu süreç(ler)den geliyor.")
+    else:
+        text = (f"En yoğun süreç grubu ({label}) yükün yalnızca yaklaşık "
+                f"{fmt_pct(share * 100, 0)}'ini oluşturuyor; yük birden fazla sürece dağılmış.")
+    return text, evidence
 
 
 def _aggregate_top_cpu(period: Sequence[SystemSample], n: int = 5) -> List[str]:
@@ -364,7 +401,8 @@ class DiskIoAnomalyRule(Rule):
             busy_flags.append(busy_ok)
             evidence.append(Evidence(
                 metric="disk_total_bytes_per_s", label="Okuma+yazma hızı (pencere medyanı)",
-                value=round(tp, 1), threshold=None if tp_threshold is None else round(tp_threshold, 1),
+                value=round(tp, 1),
+                threshold=None if tp_threshold is None else round(tp_threshold, 1),
                 comparison=">=", unit="B/sn", window_start=w.start, window_end=w.end,
                 satisfied=ratio_ok, role="trigger",
                 note=(f"Eşik = max({tr_num(s.disk_ratio, 1)} × taban, "
@@ -392,11 +430,14 @@ class DiskIoAnomalyRule(Rule):
         ratio_cond = all(ratio_flags)
         busy_cond = all(busy_flags) and (base_busy_med is None or base_busy_med < s.disk_busy_pct)
         if not (ratio_cond or busy_cond):
+            values = " / ".join(fmt_rate(tp) for tp in tps)
             if tp_threshold is None:
-                detail = "taban verisi yetersiz ve meşguliyet eşiği her pencerede aşılmadı"
+                detail = ("taban verisi yetersiz ve meşguliyet eşiği her pencerede aşılmadı "
+                          f"(pencere medyanları {values})")
             else:
-                detail = (f"son pencere {fmt_rate(tps[-1])}, eşik {fmt_rate(tp_threshold)}; "
-                          "meşguliyet koşulu da sağlanmadı")
+                detail = (f"okuma+yazma eşiği ({fmt_rate(tp_threshold)}) her pencerede "
+                          f"aşılmadı (pencere medyanları {values}); meşguliyet koşulu da "
+                          "sağlanmadı")
             return RuleOutcome(False, f"Koşul sağlanmadı: {detail}.")
 
         reasons = []

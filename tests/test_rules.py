@@ -158,3 +158,73 @@ def test_disk_negative_single_short_burst(settings):
     samples = build_series(240, lambda i, t: _disk(80, 0, 95) if 462 <= t < 470 else
                            _disk(0.5, 0.5, 3))
     assert not DiskIoAnomalyRule().evaluate(samples, settings).triggered
+
+
+# ----------------------------------------------------------------------------- eşik sınırları
+# Sınır davranışı belgelenen karşılaştırmalarla aynı olmalı: bellek "<", destek/CPU/disk ">=".
+
+
+@pytest.mark.parametrize("available, expected", [(10.0, False), (9.99, True)])
+def test_memory_boundary_available_threshold_is_strict(settings, available, expected):
+    samples = build_series(60, lambda i, t: dict(mem_available_percent=available,
+                                                 swap_in_pages_per_s=150.0))
+    assert MemoryPressureRule().evaluate(samples, settings).triggered is expected
+
+
+@pytest.mark.parametrize("swap_rate, expected", [(100.0, True), (99.9, False)])
+def test_memory_boundary_support_threshold_is_inclusive(settings, swap_rate, expected):
+    samples = build_series(60, lambda i, t: dict(mem_available_percent=6.0,
+                                                 swap_in_pages_per_s=swap_rate,
+                                                 swap_out_pages_per_s=0.0))
+    assert MemoryPressureRule().evaluate(samples, settings).triggered is expected
+
+
+@pytest.mark.parametrize("high_per_window, expected", [(12, True), (11, False)])
+def test_cpu_boundary_fraction_of_samples(settings, high_per_window, expected):
+    # Her 30 sn'lik pencerede 15 örnek var; 12/15 = %80 (eşik dahil), 11/15 = %73
+    def profile(i, t):
+        position = i % 15  # pencere içindeki sıra (pencereler 15 örnekle hizalı)
+        return dict(cpu_percent=85.0 if position < high_per_window else 40.0)
+    samples = build_series(61, profile)[1:]  # ilk örnek pencere sınırının dışında kalır
+    assert SustainedCpuRule().evaluate(samples, settings).triggered is expected
+
+
+@pytest.mark.parametrize("throughput_mib, expected", [(5.0, True), (4.99, False)])
+def test_disk_boundary_absolute_floor_is_inclusive(settings, throughput_mib, expected):
+    samples = build_series(240, lambda i, t: _disk(throughput_mib, 0.0, 10) if t >= 360 else
+                           _disk(0.1, 0.1, 1))
+    assert DiskIoAnomalyRule().evaluate(samples, settings).triggered is expected
+
+
+@pytest.mark.parametrize("busy, expected", [(80.0, True), (79.9, False)])
+def test_disk_boundary_busy_threshold_is_inclusive(settings, busy, expected):
+    samples = build_series(240, lambda i, t: _disk(0.5, 0.5, busy) if t >= 360 else
+                           _disk(0.5, 0.5, 5))
+    assert DiskIoAnomalyRule().evaluate(samples, settings).triggered is expected
+
+
+# ----------------------------------------------------------------------------- CPU kaynağı
+
+
+def test_cpu_load_attributed_to_dominant_process_group(settings, brief):
+    top = tuple(brief(4100 + k, "cc1plus", cpu=30.0) for k in range(3)) + \
+        (brief(1500, "firefox-esr", cpu=3.0),)
+    samples = build_series(60, lambda i, t: dict(cpu_percent=96.0, top_cpu=top))
+    draft = SustainedCpuRule().evaluate(samples, settings).draft
+    assert "cc1plus (3 süreç) kaynaklı" in draft.summary
+    share = next(e for e in draft.evidence if e.metric == "top_process_share")
+    assert share.satisfied and share.value == pytest.approx(93.8, abs=0.1)
+
+
+def test_cpu_load_reported_as_distributed_across_processes(settings, brief):
+    top = tuple(brief(100 + k, f"is-{k}", cpu=18.0) for k in range(5))
+    samples = build_series(60, lambda i, t: dict(cpu_percent=92.0, top_cpu=top))
+    draft = SustainedCpuRule().evaluate(samples, settings).draft
+    assert "birden fazla sürece dağılmış" in draft.summary
+
+
+def test_cpu_source_unknown_without_process_data(settings):
+    samples = build_series(60, lambda i, t: dict(cpu_percent=95.0))
+    draft = SustainedCpuRule().evaluate(samples, settings).draft
+    assert "belirlenemedi" in draft.summary
+    assert not any(e.metric == "top_process_share" for e in draft.evidence)
