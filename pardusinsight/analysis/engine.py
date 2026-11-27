@@ -14,6 +14,7 @@ Kurallar pencere başına beklenen örnek sayısını örnekleme aralığından 
 """
 from __future__ import annotations
 
+import logging
 import statistics
 from collections import OrderedDict, deque
 from dataclasses import replace
@@ -23,6 +24,8 @@ from ..config import AnalysisSettings
 from ..core.history import since
 from ..core.models import Alert, EngineUpdate, RuleStatus, SystemSample
 from .rules import Rule, RuleOutcome, default_rules
+
+logger = logging.getLogger(__name__)
 
 
 class RuleEngine:
@@ -37,6 +40,7 @@ class RuleEngine:
         self._log: "OrderedDict[str, Alert]" = OrderedDict()
         self._statuses: Dict[str, RuleStatus] = {}
         self._seq = 0
+        self._failed_rules: set = set()
 
     def update_settings(self, settings: AnalysisSettings) -> None:
         self.settings = settings.validate()
@@ -94,6 +98,9 @@ class RuleEngine:
                 outcome = rule.evaluate(relevant, settings)
             except Exception as exc:  # kural hatası uygulamayı durdurmamalı
                 errors.append(f"{rule.title}: değerlendirme hatası ({type(exc).__name__}: {exc})")
+                if rule.rule_id not in self._failed_rules:
+                    self._failed_rules.add(rule.rule_id)
+                    logger.warning("Kural %s hata verdi", rule.rule_id, exc_info=True)
                 outcome = RuleOutcome(False, "Kural değerlendirilemedi (hata kaydedildi).",
                                       insufficient=True)
             self._statuses[rule.rule_id] = RuleStatus(

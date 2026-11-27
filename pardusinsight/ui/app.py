@@ -16,7 +16,8 @@ from .main_window import MainWindow
 
 def run_gui(settings: AppSettings, synthetic: Optional[str] = None,
             replay: Optional[str] = None, speed: float = 1.0, seed: int = 461) -> int:
-    app = QApplication.instance() or QApplication(sys.argv)
+    existing = QApplication.instance()
+    app = existing if isinstance(existing, QApplication) else QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationDisplayName(APP_NAME)
     can_sample = True

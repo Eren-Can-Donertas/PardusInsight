@@ -9,12 +9,13 @@ from PySide6.QtCore import QMetaObject, QThread, Qt, Signal, Slot
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
                                QHeaderView, QLabel, QLineEdit, QMainWindow, QMessageBox,
-                               QPlainTextEdit, QTableView, QTabWidget, QToolBar, QVBoxLayout,
-                               QWidget)
+                               QPlainTextEdit, QTableView, QTabWidget, QTextBrowser, QToolBar,
+                               QVBoxLayout, QWidget)
 
 from .. import APP_NAME, __version__
+from ..analysis.methodology import methodology_html
 from ..config import settings_to_dict
-from ..core.formatting import fmt_bytes, fmt_pct, fmt_rate, fmt_time, tr_num
+from ..core.formatting import fmt_bytes, fmt_pct, fmt_rate, tr_num
 from ..core.models import Alert, SystemSample, TickResult
 from ..core.service import MonitorService, SelfUsageMonitor
 from ..export import (ReportError, build_report, load_json_report, write_alerts_csv,
@@ -78,7 +79,7 @@ class MainWindow(QMainWindow):
     request_stop = Signal()
     request_interval = Signal(int)
     request_settings = Signal(object)
-    request_recording = Signal(object, str)
+    request_recording = Signal(object, str, str)
     request_resume_live = Signal()
 
     def __init__(self, service: MonitorService, mode_label: str, speed: float = 1.0,
@@ -108,14 +109,14 @@ class MainWindow(QMainWindow):
         self.request_settings.connect(self.worker.apply_settings)
         self.request_recording.connect(self.worker.load_recording)
         self.request_resume_live.connect(self.worker.resume_live)
-        self.thread: Optional[QThread] = None
+        self.sampler_thread: Optional[QThread] = None
         if start_worker:
-            self.thread = QThread(self)
-            self.thread.setObjectName("pardusinsight-sampler")
-            self.worker.moveToThread(self.thread)
+            self.sampler_thread = QThread(self)
+            self.sampler_thread.setObjectName("pardusinsight-sampler")
+            self.worker.moveToThread(self.sampler_thread)
             if can_sample:
-                self.thread.started.connect(self.worker.start)
-            self.thread.start()
+                self.sampler_thread.started.connect(self.worker.start)
+            self.sampler_thread.start()
         self._log(f"{APP_NAME} {__version__} başlatıldı — {mode_label}. Örnekleme aralığı "
                   f"{tr_num(service.settings.sample_interval_s, 1)} sn, geçmiş tamponu "
                   f"{tr_num(service.settings.history_minutes, 0)} dk.")
@@ -126,6 +127,7 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         self._pending_processes: Optional[TickResult] = None
+        self._charts_dirty = False
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_overview(), "Genel Bakış")
         self.tabs.addTab(self._build_processes(), "Süreçler")
@@ -135,9 +137,22 @@ class MainWindow(QMainWindow):
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumBlockCount(1000)
         self.tabs.addTab(self.log_view, "Günlük")
-        self.tabs.currentChanged.connect(
-            lambda index: self._flush_processes() if index == 1 else None)
-        self.setCentralWidget(self.tabs)
+        self.methodology_view = QTextBrowser()
+        self.methodology_view.setHtml(methodology_html(self.service.settings))
+        self.tabs.addTab(self.methodology_view, "Metodoloji")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+        # Demo/sentetik veri şeridi: sentetik değerler gerçek ölçüm sanılmasın
+        self.data_banner = QLabel()
+        self.data_banner.setWordWrap(True)
+        self.data_banner.setAccessibleName("Veri kaynağı uyarısı")
+        central = QWidget()
+        column = QVBoxLayout(central)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        column.addWidget(self.data_banner)
+        column.addWidget(self.tabs, 1)
+        self.setCentralWidget(central)
+        self._update_banner()
         self._build_toolbar()
         self.mode_status = QLabel(self.mode_label)
         self.samples_status = QLabel("Örnek: 0")
@@ -274,6 +289,7 @@ class MainWindow(QMainWindow):
     @Slot(object)
     def apply_tick(self, result: TickResult) -> None:
         self.last_result = result
+        self._update_banner()
         if result.sample is not None:
             self._update_tiles(result.sample, result.update.active)
         if result.processes is not None:
@@ -287,7 +303,8 @@ class MainWindow(QMainWindow):
         active = len(result.update.active)
         self.tabs.setTabText(2, f"Uyarılar ({active})" if active else "Uyarılar")
         for alert in result.update.new:
-            self._log(f"{SEVERITY_ICON.get(alert.severity, '•')} Yeni {alert.severity_label.lower()}"
+            icon = SEVERITY_ICON.get(alert.severity, "•")
+            self._log(f"{icon} Yeni {alert.severity_label.lower()}"
                       f": {alert.title} — {alert.summary}")
             self.statusBar().showMessage(f"Yeni uyarı: {alert.title}", 8000)
         for alert in result.update.resolved:
@@ -297,7 +314,10 @@ class MainWindow(QMainWindow):
             for err in errors:
                 self._log(f"! {err}")
         self._last_errors = errors
-        self._refresh_charts()
+        if self.tabs.currentIndex() == 0:
+            self._refresh_charts()
+        else:
+            self._charts_dirty = True  # gizli grafikler sekme açılınca güncellenir
         self._update_status(result)
 
     def _update_tiles(self, s: SystemSample, active: Tuple[Alert, ...]) -> None:
@@ -326,6 +346,33 @@ class MainWindow(QMainWindow):
                                  ", ".join(a.title for a in active) or "Koşul yok")
         psi = "mevcut" if s.psi_memory_some is not None else "yok (çekirdek desteği kapalı)"
         self.source_info.setText(f"Kaynak: {self.service.source_name} · PSI: {psi}")
+
+    def _on_tab_changed(self, index: int) -> None:
+        if index == 0 and self._charts_dirty:
+            self._refresh_charts()
+        elif index == 1:
+            self._flush_processes()
+
+    def _update_banner(self) -> None:
+        state = (self.service.is_synthetic, self.service.replay_mode, self.service.data_source)
+        if state == getattr(self, "_banner_state", None):
+            return
+        self._banner_state = state
+        if self.service.is_synthetic:
+            text = ("DEMO / SENTETİK VERİ — Gösterilen değerler gerçek sistem ölçümü DEĞİLDİR "
+                    f"(kaynak: {self.service.data_source}).")
+            color = "#fab219"
+        elif self.service.replay_mode:
+            text = ("KAYIT ANALİZİ — Canlı veri değil; daha önce kaydedilmiş gerçek ölçümler "
+                    f"yeniden analiz ediliyor (kaynak: {self.service.data_source}).")
+            color = "#9db8d9"
+        else:
+            self.data_banner.hide()
+            return
+        self.data_banner.setText(text)
+        self.data_banner.setStyleSheet(
+            f"background:{color}; color:#111111; font-weight:bold; padding:6px 10px;")
+        self.data_banner.show()
 
     def _flush_processes(self) -> None:
         result, self._pending_processes = self._pending_processes, None
@@ -364,6 +411,7 @@ class MainWindow(QMainWindow):
         return span
 
     def _refresh_charts(self) -> None:
+        self._charts_dirty = False
         samples = self.service.history.snapshot()
         now = samples[-1].timestamp if samples else time.time()
         span = self._chart_span()
@@ -439,7 +487,7 @@ class MainWindow(QMainWindow):
         samples = self.service.history.snapshot()
         alerts_path = alerts_csv_path(path)
         try:
-            n = write_samples_csv(path, samples)
+            n = write_samples_csv(path, samples, data_source=self.service.data_source)
             m = write_alerts_csv(alerts_path, self._alert_log)
         except OSError as exc:
             QMessageBox.warning(self, "Dışa aktarılamadı", f"Dosya yazılamadı: {exc}")
@@ -458,13 +506,14 @@ class MainWindow(QMainWindow):
                 return False
         samples = self.service.history.snapshot()
         report = build_report(samples, self._alert_log, settings_to_dict(self.service.settings),
-                              source=self.replay_label or self.service.source_name)
+                              source=self.service.data_source)
         try:
             write_json_report(path, report)
         except OSError as exc:
             QMessageBox.warning(self, "Dışa aktarılamadı", f"Dosya yazılamadı: {exc}")
             return False
-        message = f"JSON rapor kaydedildi: {path} ({len(samples)} örnek, {len(self._alert_log)} uyarı)"
+        message = (f"JSON rapor kaydedildi: {path} ({len(samples)} örnek, "
+                   f"{len(self._alert_log)} uyarı)")
         self._log(message)
         self.statusBar().showMessage(message, 10000)
         return True
@@ -484,7 +533,8 @@ class MainWindow(QMainWindow):
         if not data.samples:
             QMessageBox.information(self, "Kayıt boş", "Bu dosyada örnek bulunmuyor.")
             return False
-        self.request_recording.emit(data.samples, os.path.basename(path))
+        self.request_recording.emit(data.samples, os.path.basename(path),
+                                    str(data.meta.get("source", "unknown")))
         return True
 
     @Slot(object, str)
@@ -511,21 +561,23 @@ class MainWindow(QMainWindow):
             self.charts["cpu"].set_threshold(new.analysis.cpu_high_pct, "CPU eşiği")
             self.charts["memory"].set_threshold(100.0 - new.analysis.mem_available_warn_pct,
                                                 "RAM uyarı eşiği")
+            self.methodology_view.setHtml(methodology_html(new))
             self._log("Ayarlar güncellendi: aralık "
                       f"{tr_num(new.sample_interval_s, 1)} sn, pencere "
-                      f"{tr_num(new.analysis.window_s, 0)} sn × {new.analysis.consecutive_windows}.")
+                      f"{tr_num(new.analysis.window_s, 0)} sn × "
+                      f"{new.analysis.consecutive_windows}.")
 
     def show_about(self) -> None:
         QMessageBox.about(self, f"{APP_NAME} hakkında", ABOUT_HTML)
 
     def shutdown(self) -> None:
         """Worker'ı durdurur ve iş parçacığının bitmesini bekler."""
-        if self.thread is not None and self.thread.isRunning():
+        if self.sampler_thread is not None and self.sampler_thread.isRunning():
             # Zamanlayıcı worker iş parçacığına ait olduğu için orada durdurulmalı
             QMetaObject.invokeMethod(self.worker, "stop",
                                      Qt.ConnectionType.BlockingQueuedConnection)
-            self.thread.quit()
-            self.thread.wait(5000)
+            self.sampler_thread.quit()
+            self.sampler_thread.wait(5000)
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         self.shutdown()

@@ -325,3 +325,30 @@ def test_disk_thresholds_are_inclusive(settings, now):
     # (1) medyan tam 5 MiB/sn = max(3 × 1 MiB/sn, 5 MiB/sn); (2) meşguliyet tam %80
     samples = build_series(240, lambda i, t: now if t >= 360 else _disk(0.5, 0.5, 3))
     assert DiskIoAnomalyRule().evaluate(samples, settings).triggered
+
+
+# ----------------------------------------------------------------------------- CPU kaynağı
+
+
+def test_cpu_load_attributed_to_dominant_process_group(settings, brief):
+    top = tuple(brief(4100 + k, "cc1plus", cpu=30.0) for k in range(3)) + \
+        (brief(1500, "firefox-esr", cpu=3.0),)
+    samples = build_series(60, lambda i, t: dict(cpu_percent=96.0, top_cpu=top))
+    draft = SustainedCpuRule().evaluate(samples, settings).draft
+    assert "kadarı cc1plus (3 süreç) kaynaklı" in draft.summary
+    share = next(e for e in draft.evidence if e.metric == "top_process_share")
+    assert share.satisfied and share.value == pytest.approx(93.8, abs=0.1)
+
+
+def test_cpu_load_reported_as_distributed_across_processes(settings, brief):
+    top = tuple(brief(100 + k, f"is-{k}", cpu=18.0) for k in range(5))
+    samples = build_series(60, lambda i, t: dict(cpu_percent=92.0, top_cpu=top))
+    draft = SustainedCpuRule().evaluate(samples, settings).draft
+    assert "birden fazla sürece dağılmış" in draft.summary
+
+
+def test_cpu_source_unknown_without_process_data(settings):
+    samples = build_series(60, lambda i, t: dict(cpu_percent=95.0))
+    draft = SustainedCpuRule().evaluate(samples, settings).draft
+    assert "belirlenemedi" in draft.summary
+    assert not any(e.metric == "top_process_share" for e in draft.evidence)

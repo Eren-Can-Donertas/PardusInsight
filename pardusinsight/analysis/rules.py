@@ -287,16 +287,21 @@ class SustainedCpuRule(Rule):
         notes = [COMMON_UNCERTAINTY,
                  "Yüksek CPU kullanımı tek başına sorun değildir; derleme, video işleme gibi "
                  "beklenen işler de bu uyarıyı tetikleyebilir.",
-                 "Süreç CPU değerleri örnekleme anlarındaki ölçümlerdir; örnekler arasında başlayıp "
+                 "Süreç CPU değerleri örnekleme anlarındaki ölçümlerdir; örnekler arasında "
+                 "başlayıp "
                  "biten kısa ömürlü süreçler listede görünmeyebilir."]
         if steal is not None and steal >= 5:
             notes.append("Steal payı yüksek: sanal makinenin ana sistemde CPU için beklediğini "
                          "gösterebilir.")
         notes.append(_coverage_note(windows, "cpu_percent", s))
+        source_text, source_evidence = _cpu_source_attribution(period, overall, start, end, s)
+        if source_evidence is not None:
+            evidence.append(source_evidence)
         summary = (
             f"Son {fmt_duration(end - start)} boyunca her pencerede CPU kullanımı, örneklerin "
             f"en az {fmt_pct(s.cpu_min_fraction * 100, 0)} kadarında "
-            f"{fmt_pct(s.cpu_high_pct, 0)} eşiğinin üzerindeydi (ortalama {fmt_pct(overall)}).")
+            f"{fmt_pct(s.cpu_high_pct, 0)} eşiğinin üzerindeydi (ortalama {fmt_pct(overall)}). "
+            f"{source_text}")
         return RuleOutcome(True, "Kalıcı CPU yoğunluğu koşulları sağlandı.", AlertDraft(
             title=self.title, severity=SEVERITY_WARNING, confidence=confidence,
             summary=summary, window_start=start, window_end=end, evidence=tuple(evidence),
@@ -347,6 +352,43 @@ def _aggregate_top(period: Sequence[SystemSample], list_attr: str, value_attr: s
                              count, peaks[(pid, name)] if mode == "max" else sums[(pid, name)])
             for (pid, name), count in counts.items()]
     return sorted(rows, key=lambda r: r.rank, reverse=True)[:n]
+
+
+def _cpu_source_attribution(period: Sequence[SystemSample], overall: float, start: float,
+                            end: float, s: AnalysisSettings) -> Tuple[str, Optional[Evidence]]:
+    """Yükün tek bir süreç adından mı geldiğini, yoksa dağınık mı olduğunu açıklar.
+
+    Aynı adlı süreçler (ör. paralel derleyici örnekleri) tek grup sayılır. Pay, grubun
+    dönem toplamının dönemdeki **tüm** örnek sayısına bölünmesiyle bulunur (listede
+    görünmediği örnekler 0 sayılır; aksi hâlde tek örnekte görülen bir süreç payı
+    şişirirdi) ve toplam CPU ortalamasıyla karşılaştırılır. Pay ``cpu_process_share``
+    oranını aşarsa yoğunluk "süreç kaynaklı" olarak nitelenir. Bu bilgi bağlamdır;
+    tetiklemeyi etkilemez. Süreç listesi yoksa yalnızca belirsizlik bildirilir.
+    """
+    rows = _aggregate_top(period, "top_cpu", "cpu_percent", "mean", n=50)
+    if not rows or overall <= 0 or not period:
+        return ("Süreç verisi olmadığından yükün kaynağı belirlenemedi.", None)
+    groups: Dict[str, Tuple[float, int]] = {}
+    for row in rows:
+        total, count = groups.get(row.name, (0.0, 0))
+        groups[row.name] = (total + row.rank, count + 1)  # rank = dönem toplamı
+    name, (period_total, count) = max(groups.items(), key=lambda kv: kv[1][0])
+    share = min(period_total / len(period) / overall, 1.0)
+    dominant = share >= s.cpu_process_share
+    label = f"{name}" + (f" ({count} süreç)" if count > 1 else "")
+    evidence = Evidence(
+        metric="top_process_share", label=f"En yoğun süreç grubunun payı: {label}",
+        value=round(share * 100.0, 1), threshold=round(s.cpu_process_share * 100.0, 1),
+        comparison=">=", unit="%", window_start=start, window_end=end, satisfied=dominant,
+        role="context", note="Grubun dönem ortalaması / toplam CPU ortalaması")
+    if dominant:
+        text = (f"Yükün yaklaşık {fmt_pct(share * 100, 0)} kadarı {label} kaynaklı; yoğunluk "
+                "büyük olasılıkla bu süreç(ler)den geliyor.")
+    else:
+        text = (f"En yoğun süreç grubu ({label}) yükün yalnızca yaklaşık "
+                f"{fmt_pct(share * 100, 0)} kadarını oluşturuyor; yük birden fazla sürece "
+                "dağılmış.")
+    return text, evidence
 
 
 def _aggregate_top_cpu(period: Sequence[SystemSample], n: int = 5) -> List[str]:
@@ -427,7 +469,8 @@ class DiskIoAnomalyRule(Rule):
             busy_flags.append(busy_ok)
             evidence.append(Evidence(
                 metric="disk_total_bytes_per_s", label="Okuma+yazma hızı (pencere medyanı)",
-                value=round(tp, 1), threshold=None if tp_threshold is None else round(tp_threshold, 1),
+                value=round(tp, 1),
+                threshold=None if tp_threshold is None else round(tp_threshold, 1),
                 comparison=">=", unit="B/sn", window_start=w.start, window_end=w.end,
                 satisfied=ratio_ok, role="trigger",
                 note=(f"Eşik = max({_compact(s.disk_ratio)} × taban, "

@@ -6,6 +6,7 @@ alanında kullanıcıya iletilir, uygulama çökmez.
 """
 from __future__ import annotations
 
+import logging
 import os
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
@@ -14,6 +15,7 @@ from ..core.models import CpuTimes, DiskCounters, MemoryInfo, RawSnapshot, VmCou
 from .procfs import ProcFsReader, is_physical_disk
 
 T = TypeVar("T")
+logger = logging.getLogger(__name__)
 
 _READ_ERRORS = (OSError, ValueError, KeyError, IndexError)
 
@@ -36,10 +38,12 @@ class LinuxSystemCollector:
                  clock: Callable[[], float] = time.time,
                  monotonic: Callable[[], float] = time.monotonic) -> None:
         self.reader = reader or ProcFsReader()
-        self.psutil = load_psutil() if psutil_module == "auto" else psutil_module
+        # Any: psutil isteğe bağlıdır; yedek fonksiyonlar yalnızca modül yüklüyse çağrılır
+        self.psutil: Any = load_psutil() if psutil_module == "auto" else psutil_module
         self._clock = clock
         self._monotonic = monotonic
         self._cpu_count = os.cpu_count()
+        self._reported: set = set()  # aynı hatayı her turda WARNING olarak tekrarlamamak için
 
     # -- yardımcı -----------------------------------------------------------
     def _section(self, name: str, primary: Callable[[], T],
@@ -48,6 +52,9 @@ class LinuxSystemCollector:
             return primary()
         except _READ_ERRORS as exc:
             message = f"{name}: /proc okunamadı ({type(exc).__name__})"
+            level = logging.DEBUG if name in self._reported else logging.WARNING
+            self._reported.add(name)
+            logger.log(level, "%s: %s", message, exc)
         if fallback is not None and self.psutil is not None:
             try:
                 value = fallback()

@@ -164,3 +164,17 @@ def test_real_scan_survives_processes_exiting_during_scan():
             child.wait(timeout=10)
     # Çocuklar sonlandıktan sonra da tarama sorunsuz
     assert collector.collect().error is None
+
+
+def test_permission_error_on_proc_file_is_reported_not_raised(fake_proc, monkeypatch):
+    proc, sysfs = fake_proc
+    reader = ProcFsReader(str(proc), str(sysfs), 100)
+
+    def denied():
+        raise PermissionError(13, "İzin reddedildi", str(proc / "meminfo"))
+
+    monkeypatch.setattr(reader, "read_memory", denied)
+    raw = LinuxSystemCollector(reader, psutil_module=None).collect()
+    assert raw.memory is None and raw.cpu_times is not None
+    assert raw.errors == ("Bellek (/proc/meminfo): /proc okunamadı (PermissionError); "
+                          "veri alınamadı",)

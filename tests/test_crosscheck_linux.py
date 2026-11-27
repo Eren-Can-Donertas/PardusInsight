@@ -8,12 +8,14 @@ import time
 
 import pytest
 
-from conftest import linux_only
+from conftest import HAS_PSUTIL, IS_LINUX
 from pardusinsight.collectors.procfs import ProcFsReader
 from pardusinsight.collectors.system import LinuxSystemCollector
 from pardusinsight.core.normalize import Normalizer
 
-pytestmark = linux_only
+pytestmark = [pytest.mark.linux,
+              pytest.mark.skipif(not (IS_LINUX and HAS_PSUTIL),
+                                 reason="gerçek Linux /proc ve psutil gerekir")]
 
 ROUNDS = 10
 

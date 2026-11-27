@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 from .. import APP_NAME, __version__
 from ..analysis.windows import mean
 from ..core.formatting import fmt_iso
-from ..core.models import (Alert, SystemSample, alert_from_dict, alert_to_dict,
+from ..core.models import (SAMPLE_UNITS, Alert, SystemSample, alert_from_dict, alert_to_dict,
                            sample_from_dict, sample_to_dict)
 from .atomic import atomic_write
 
@@ -94,7 +94,9 @@ def build_report(samples: Sequence[SystemSample], alerts: Sequence[Alert],
         "created_at": fmt_iso(now),
         "created_at_epoch": round(now, 3),
         "source": source,
+        "is_synthetic": "synthetic" in source,
         "system": system_info() if include_system_info else {},
+        "units": dict(SAMPLE_UNITS),
         "settings": dict(settings or {}),
         "summary": summary,
         "alerts": [alert_to_dict(a) for a in alerts],

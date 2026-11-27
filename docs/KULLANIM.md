@@ -45,6 +45,20 @@ kutusuna ad, kullanıcı veya PID yazın. Okunamayan alanlar "—" ile gösteril
 ### Günlük
 Başlatma bilgisi, yeni/çözülen uyarılar, okuma hataları, dışa aktarma ve ayar değişiklikleri.
 
+### Metodoloji
+Her metriğin hangi çekirdek arayüzünden (`/proc/stat`, `/proc/meminfo`, `/proc/vmstat`,
+`/proc/diskstats`, `/proc/pressure/*`) hangi formülle hesaplandığını, pencere mantığını ve
+kuralların **geçerli eşiklerini** gösterir. Ayarlar değiştirildiğinde sayfa güncellenir.
+
+## Demo / sentetik veri şeridi
+`--synthetic` ile başlatıldığında veya sentetik bir senaryo dosyası (`scenarios/*.json`)
+açıldığında pencerenin üstünde sarı **"DEMO / SENTETİK VERİ — Gösterilen değerler gerçek
+sistem ölçümü DEĞİLDİR"** şeridi bütün sekmelerde görünür. Pencere başlığı ve durum çubuğu da
+modu belirtir. Daha önce kaydedilmiş gerçek ölçümler açıldığında mavi **"KAYIT ANALİZİ"**
+şeridi çıkar. Sentetik veriden alınan CSV'lerde `data_source` sütunu `synthetic:<senaryo>`,
+JSON raporlarında `is_synthetic: true` olur. Komut satırı modunda da her satırın başında
+`[SENTETİK]` yazar.
+
 ## Durum çubuğu
 Çalışma modu · tampondaki örnek sayısı ve süresi · son ölçüm turunun süresi ·
 **uygulamanın kendi CPU ve RAM kullanımı** (performans hedeflerini izlemek için).

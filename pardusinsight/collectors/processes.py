@@ -7,11 +7,14 @@ Tarama sırasında sonlanan süreçler (NoSuchProcess) atlanır. Hiçbir süreç
 """
 from __future__ import annotations
 
+import logging
 import os
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..core.models import ProcessBrief, ProcessInfo, ProcessSnapshot
+
+logger = logging.getLogger(__name__)
 
 _ATTRS = ["name", "uids", "status", "cpu_percent", "memory_info",
           "memory_percent", "num_threads", "io_counters", "create_time"]
@@ -35,7 +38,8 @@ class ProcessCollector:
     def _username(self, uids: Any) -> Optional[str]:
         if uids is None:
             return None
-        uid = int(getattr(uids, "real", uids[0] if isinstance(uids, (tuple, list)) else uids))
+        raw: Any = getattr(uids, "real", uids[0] if isinstance(uids, (tuple, list)) else uids)
+        uid = int(raw)
         name = self._user_cache.get(uid)
         if name is None:
             try:
@@ -59,6 +63,7 @@ class ProcessCollector:
         try:
             iterator = iter(ps.process_iter())
         except Exception as exc:  # psutil tamamen başarısız olursa
+            logger.warning("Süreç listesi alınamadı: %r", exc)
             return ProcessSnapshot(error=f"Süreç listesi alınamadı ({type(exc).__name__})")
 
         while True:
@@ -71,6 +76,7 @@ class ProcessCollector:
                 break  # üreteç sonlandı
             except Exception as exc:
                 error = f"Süreç taraması yarıda kesildi ({type(exc).__name__})"
+                logger.warning("%s: %r", error, exc)
                 break
             total += 1
             try:
@@ -81,8 +87,9 @@ class ProcessCollector:
             except denied_exc:
                 denied += 1
                 continue
-            except Exception:
+            except Exception as exc:
                 # Beklenmeyen tek süreç hatası tüm taramayı durdurmamalı
+                logger.debug("PID %s okunamadı: %r", getattr(proc, "pid", "?"), exc)
                 denied += 1
                 continue
             row = self._build_row(proc, info, now, new_io)

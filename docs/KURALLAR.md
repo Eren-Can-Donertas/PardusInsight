@@ -54,6 +54,12 @@ belirlenen pencere").
 **Bağlam:** Dönem boyunca örneklerde görülen süreçlerin ortalama CPU payı (ilk 5),
 kullanıcı/çekirdek alanı payı, steal payı, 1 dk yük ortalaması.
 
+**Süreç kaynaklı mı, dağınık mı?** Aynı adlı süreçler (ör. paralel derleyici örnekleri) tek
+grup sayılır. En yoğun grubun dönem ortalaması toplam CPU ortalamasının
+`cpu_process_share` (varsayılan %50) oranını aşarsa özet "yükün yaklaşık %X'i <süreç>
+kaynaklı" der. Aşmazsa "yük birden fazla sürece dağılmış" der. Süreç verisi yoksa kaynak
+"belirlenemedi" olarak bildirilir. Bu bilgi bağlamdır; tetiklemeyi etkilemez.
+
 **Neden oran?** Ortalama, kısa ama çok yüksek sıçramalardan etkilenir (`cpu_spikes`
 senaryosunda ortalama yüksek olabilir ama yük kalıcı değildir). Oran ölçütü yükün
 pencerenin büyük kısmına yayılmasını ister.
@@ -82,6 +88,17 @@ tetiklemesini önler. Mutlak alt sınır ise boş bir diskte 0,1 → 1 MiB/sn gi
 
 **Sınırlılıklar:** Diğer kullanıcıların süreçlerinin G/Ç sayaçları root olmadan okunamaz.
 NVMe/SSD'de %util doygunluğu abartabilir. Artış olağan bir işten kaynaklanabilir.
+
+## Eşik sınırlarında davranış
+
+Karşılaştırmalar kodda ve testlerde aynı tanımlıdır (`tests/test_rules.py`, "eşik sınırları"):
+
+| Ölçüt | Karşılaştırma | Örnek |
+|---|---|---|
+| Kullanılabilir bellek medyanı | `<` (katı) | tam %10,0 → tetiklemez; %9,99 → tetikler |
+| Destekleyici göstergeler (swap, major fault, PSI) | `≥` | swap tam 100 sayfa/sn → destek sayılır |
+| CPU eşik üstü oranı | `≥` | 15 örnekten 12'si (%80) → tetikler; 11'i → tetiklemez |
+| Disk hızı medyanı / meşguliyet | `≥` | tam 5 MiB/sn veya tam %80 → tetikler |
 
 ## Kalibrasyon
 

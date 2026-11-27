@@ -57,7 +57,15 @@
    kullanılır ve bu durum işaretlenir.
 7. **Çift sayımı önleme.** Disk toplamına yalnızca `/sys/block` altındaki fiziksel diskler girer.
    `loop`, `dm-*`, `md*`, `zram`, `sr` ve bölümler dışlanır.
-8. **Hafif grafikler.** QtCharts yerine QPainter ile yazılmış bir grafik kullanılır, böylece ek paket
+8. **Demo verisinin etiketlenmesi.** Servis, gösterilen verinin kaynağını bilir
+   (`MonitorService.data_source`, `is_synthetic`). Sentetik veri GUI'de sarı şeritle, CSV'de
+   `data_source` sütunuyla, JSON'da `is_synthetic` ile, komut satırında `[SENTETİK]` önekiyle
+   işaretlenir.
+9. **Günlük (logging).** Modül loggerları okuma hatalarını, süreç taramasındaki kesintileri ve
+   kural hatalarını yazar. Aynı hata türü her turda tekrarlanmasın diye ilk görüldüğünde WARNING,
+   sonraki görülüşlerde DEBUG düzeyindedir. Çıktı yalnızca stderr'e gider (`--log-level`). Dosyaya
+   günlük yazılmaz.
+10. **Hafif grafikler.** QtCharts yerine QPainter ile yazılmış bir grafik kullanılır, böylece ek paket
    gerekmez. Her piksel sütunu için min/maks noktaları tutularak seyreltme yapılır.
 
 ## İş parçacığı modeli

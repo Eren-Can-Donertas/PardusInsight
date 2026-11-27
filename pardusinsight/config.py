@@ -31,12 +31,14 @@ class AnalysisSettings:
     # Kural 2: kalıcı CPU yoğunluğu
     cpu_high_pct: float = 85.0
     cpu_min_fraction: float = 0.8  # penceredeki örneklerin en az bu oranı eşiğin üstünde
+    cpu_process_share: float = 0.5  # tek süreç grubunun payı bunu aşarsa "süreç kaynaklı"
 
     # Kural 3: disk G/Ç anomalisi
     disk_baseline_s: float = 300.0  # karşılaştırma yapılan önceki dönem
     disk_min_baseline_coverage: float = 0.5
     disk_ratio: float = 3.0  # önceki döneme göre kat artış
-    disk_min_throughput_mib_s: float = 5.0  # bunun altındaki hızlar oran ne olursa olsun yok sayılır
+    disk_min_throughput_mib_s: float = 5.0  # bunun altındaki hızlar oran ne olursa olsun yok
+    #                                          sayılır (boş diskte 0,1 -> 1 MiB/sn gibi artışlar)
     disk_busy_pct: float = 80.0
 
     def validate(self) -> "AnalysisSettings":
@@ -63,6 +65,8 @@ class AnalysisSettings:
             problems.append("CPU eşiği (0, 100] aralığında olmalı")
         if not 0 < self.cpu_min_fraction <= 1:
             problems.append("CPU oran eşiği (0, 1] aralığında olmalı")
+        if not 0 < self.cpu_process_share <= 1:
+            problems.append("süreç payı eşiği (0, 1] aralığında olmalı")
         if self.disk_baseline_s <= 0:
             problems.append("disk taban dönemi pozitif olmalı")
         if not 0 < self.disk_min_baseline_coverage <= 1:

@@ -1,12 +1,14 @@
 """Süreç tablosu modeli (salt-okunur; süreçler üzerinde hiçbir eylem sunulmaz)."""
 from __future__ import annotations
 
-from typing import Any, Callable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, List, Optional, Sequence, Tuple, Union
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QPersistentModelIndex, Qt
 
 from ..core.formatting import NA, fmt_bytes, fmt_rate, tr_num
 from ..core.models import ProcessInfo
+
+Index = Union[QModelIndex, QPersistentModelIndex]
 
 SORT_ROLE = Qt.ItemDataRole.UserRole + 1
 PID_ROLE = Qt.ItemDataRole.UserRole + 2
@@ -110,13 +112,13 @@ class ProcessTableModel(QAbstractTableModel):
                 return row
         return None
 
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
+    def rowCount(self, parent: Index = QModelIndex()) -> int:  # noqa: N802
         return 0 if parent.isValid() else len(self._rows)
 
-    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
+    def columnCount(self, parent: Index = QModelIndex()) -> int:  # noqa: N802
         return 0 if parent.isValid() else len(COLUMNS)
 
-    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+    def data(self, index: Index, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
         if not index.isValid():
             return None
         proc = self._rows[index.row()]

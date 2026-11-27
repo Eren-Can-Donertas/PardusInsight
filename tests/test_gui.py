@@ -1,7 +1,7 @@
 """PySide6 arayüz testleri (QT_QPA_PLATFORM=offscreen ile ekransız çalışır).
 
 PySide6 kurulu değilse atlanır. Pardus XFCE masaüstündeki gerçek görsel
-davranış ayrıca elle doğrulanmalıdır (docs/PARDUS_DOGRULAMA.md).
+davranış ayrıca elle doğrulanmalıdır (PARDUS_VALIDATION.md).
 """
 import time
 
@@ -114,7 +114,7 @@ def test_background_sampling_keeps_gui_responsive(qapp):
     win.close()
     assert len(ticks) >= 4, "arka plan örneklemesi çalışmadı"
     assert max(gaps[1:]) < 250, f"GUI olay döngüsü {max(gaps)} ms bloklandı"
-    assert not win.thread.isRunning()
+    assert not win.sampler_thread.isRunning()
 
 
 def test_chart_handles_gaps_and_nice_axis(qapp):
@@ -162,3 +162,55 @@ def test_settings_dialog_builds_valid_settings(qapp):
     dialog._spins["mem_available_crit_pct"].setValue(40)  # uyarı eşiğinden büyük: geçersiz
     with pytest.raises(ValueError):
         dialog.build_settings()
+
+
+class _LiveLikeSource(SyntheticSource):
+    """Sentetik değer üretir ama canlı kaynak gibi adlandırılır (şerit testleri için)."""
+
+    def __init__(self, scenario: str) -> None:
+        super().__init__(scenario)
+        self.source_name = "linux"
+
+
+def test_demo_banner_shown_only_for_synthetic_data(qapp):
+    demo = MainWindow(build_synthetic_service("normal", AppSettings()), "demo",
+                      start_worker=False)
+    demo.show()
+    demo.apply_tick(demo.service.tick())
+    assert demo.data_banner.isVisible()
+    assert "SENTETİK VERİ" in demo.data_banner.text()
+    demo.close()
+
+    source = _LiveLikeSource("normal")
+    live = MainWindow(MonitorService(source, SyntheticProcessCollector(source)), "canlı",
+                      start_worker=False)
+    live.show()
+    live.apply_tick(live.service.tick())
+    assert not live.data_banner.isVisible()
+    live.close()
+
+
+def test_gui_smoke_open_sample_and_close_cleanly(qapp):
+    """Gerçek QThread ile aç, birkaç örnek al, kapat: iş parçacığı sonlanmalı."""
+    win = MainWindow(build_synthetic_service("normal", AppSettings()), "smoke", speed=20.0)
+    win.show()
+    ticks = []
+    win.worker.tick_ready.connect(ticks.append)
+    deadline = time.monotonic() + 3.0
+    while len(ticks) < 3 and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.01)
+    assert len(ticks) >= 3
+    assert win.methodology_view.toPlainText().startswith("Metodoloji")
+    win.close()
+    assert not win.sampler_thread.isRunning()
+
+
+def test_settings_dialog_keeps_values_outside_old_ranges(qapp):
+    """Komut satırıyla verilen 0,2 sn aralık ve process_every=20 kutuda kırpılmamalı."""
+    from dataclasses import replace
+
+    start = replace(AppSettings().with_interval(0.2), process_every=20).validate()
+    settings = SettingsDialog(start).build_settings()
+    assert settings.sample_interval_s == 0.2 and settings.process_every == 20
+    assert settings.analysis == start.analysis

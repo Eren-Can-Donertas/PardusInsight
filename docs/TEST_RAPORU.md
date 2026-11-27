@@ -83,6 +83,10 @@ Her düzeltme, eski kodda başarısız olan regresyon testiyle commit'lendi. Ba�
 Başka üyelerin modüllerinde bulunan ve onlara bildirilen konular: `core/service.py`
 (`load_recording` 1 sn altı kayıtları kesiyor, `apply_settings` kayıt analizini yeniden
 çalıştırmıyor), `ui/settings_dialog.py` (iletişim kutusu aralıkları CLI'dan dar).
+*Güncelleme (27.11.2026, `asama2-teslim` dalı):* Bu üç konu düzeltildi ve her biri için
+regresyon testi eklendi (`test_subsecond_recording_is_loaded_completely`,
+`test_threshold_change_reanalyzes_loaded_recording`,
+`test_settings_dialog_keeps_values_outside_old_ranges`).
 
 ### 1.3 Mutasyon denemesi
 
