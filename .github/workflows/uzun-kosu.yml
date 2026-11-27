@@ -1,0 +1,81 @@
+# Uzun koşu: PDF hedefi "varsayılan geçmiş tamponu 30 dk ile sınırlı; sürekli çalışma
+# sırasında sınırsız bellek büyümesi oluşmaması". Resmî Pardus 25.1 kapsayıcısında standart
+# kullanıcıyla 35 dk gerçek zamanlı canlı izleme yapılır (docs/PARDUS_DOGRULAMA.md, madde 4.2):
+# dakikada bir tampon uzunluğu ve süreç belleği (RSS) ölçülür.
+name: Uzun koşu
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"  # her pazartesi
+  push:
+    branches: [main]
+    paths:
+      - "pardusinsight/core/**"
+      - "pardusinsight/analysis/**"
+      - "pardusinsight/collectors/**"
+      - "scripts/pardus_kabul.py"
+      - ".github/workflows/uzun-kosu.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uzun-kosu-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  uzun:
+    name: Pardus 25.1, 35 dk canlı izleme
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: pardus/yirmibes:1
+      # Minimal imajda ca-certificates yok; sunucunun güvenilir CA paketi yalnızca ilk
+      # ca-certificates kurulumunda kullanılır (bkz. ci.yml).
+      volumes:
+        - /etc/ssl/certs/ca-certificates.crt:/opt/ci/sunucu-ca.crt:ro
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      LANG: C.UTF-8
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Pardus deposundan bağımlılıklar
+        run: |
+          HOSTCA="-o Acquire::https::CaInfo=/opt/ci/sunucu-ca.crt"
+          apt-get -o Acquire::Retries=3 $HOSTCA update > apt.log 2>&1
+          apt-get $HOSTCA install -y -q --no-install-recommends ca-certificates >> apt.log 2>&1
+          apt-get -o Acquire::Retries=3 --error-on=any update >> apt.log 2>&1
+          apt-get install -y -q --no-install-recommends git python3 python3-psutil \
+            python3-pyside6.qtwidgets qt6-qpa-plugins >> apt.log 2>&1
+      - uses: actions/checkout@v5
+        with:
+          path: kaynak
+      - name: Standart kullanıcı
+        run: |
+          useradd --create-home --shell /bin/bash ogrenci
+          chown -R ogrenci:ogrenci kaynak
+      - name: 35 dk canlı izleme (kabul listesi 4.2)
+        working-directory: kaynak
+        run: |
+          runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 scripts/pardus_kabul.py \
+            --hizli --uzun --cikti /tmp/uzun.md > ../uzun-cikti.txt 2>&1 || true
+          cp /tmp/uzun.md ../uzun.md
+          satir=$(grep -E '^\| 4\.2 ' ../uzun.md || true)
+          echo "::notice title=Uzun koşu 4.2::$satir"
+          # Dakikalık tablo (ekteki 4.2 bloğu) ayrı iş notu: GitHub iş notlarını ~4 KB'ta keser
+          blok=$(awk '/^### 4\.2 /{f=1;next} /^### /{f=0} f' ../uzun.md)
+          printf '::notice title=Uzun koşu dakikalık tablo::%s\n' \
+            "$(printf '%s\n' "$blok" | sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g')"
+          echo "$satir" | grep -q "GEÇTİ"
+      - name: Çıktıları sakla
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: uzun-kosu
+          path: |
+            uzun.md
+            uzun-cikti.txt
+          if-no-files-found: ignore

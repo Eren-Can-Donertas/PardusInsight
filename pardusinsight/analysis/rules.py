@@ -45,6 +45,8 @@ class RuleOutcome:
     triggered: bool
     reason: str
     draft: Optional[AlertDraft] = None
+    # Veri yetersiz: koşulun sağlanıp sağlanmadığı bilinmiyor (motor aktif uyarıyı kapatmaz)
+    insufficient: bool = False
 
 
 class Rule:
@@ -65,7 +67,35 @@ def _windows(samples: Sequence[SystemSample], s: AnalysisSettings) -> List[Windo
 
 def _insufficient(window: Window, have: int, need: int, what: str) -> RuleOutcome:
     return RuleOutcome(False, f"Yetersiz veri: {fmt_span(window.start, window.end)} "
-                              f"penceresinde {what} için {have}/{need} geçerli örnek.")
+                              f"penceresinde {what} için {have}/{need} geçerli örnek.",
+                       insufficient=True)
+
+
+def _compact(value: float, digits: int = 2) -> str:
+    """Gereksiz sıfırlar olmadan Türkçe sayı: 2.5 -> '2,5', 5.0 -> '5'."""
+    text = tr_num(value, digits)
+    return text.rstrip("0").rstrip(",") if "," in text else text
+
+
+def _pct_near(value: float, threshold: float) -> str:
+    """Eşiğe çok yakın değeri iki ondalıkla yazar; %9,97 '%10,0' görünüp eşikle çelişmesin."""
+    return fmt_pct(value, 2 if abs(value - threshold) < 0.05 else 1)
+
+
+def _window_name(index: int, count: int) -> str:
+    if count == 1:
+        return "pencere"
+    if index == count - 1:
+        return "son pencere"
+    return "ilk pencere" if count == 2 else f"{index + 1}. pencere"
+
+
+NO_PROCESS_INFO = ("Süreç bilgisi yok (psutil kurulu değil veya kayıtta süreç listesi "
+                   "bulunmuyor).")
+
+
+def _has_process_info(period: Sequence[SystemSample]) -> bool:
+    return any(s.top_cpu or s.top_memory or s.top_io for s in period)
 
 
 def _coverage_note(windows: Sequence[Window], getter: str, s: AnalysisSettings) -> str:
@@ -144,9 +174,11 @@ class MemoryPressureRule(Rule):
 
         low_everywhere = all(m < s.mem_available_warn_pct for m in medians)
         if not low_everywhere:
+            i = next(i for i, m in enumerate(medians) if m >= s.mem_available_warn_pct)
             return RuleOutcome(False, "Koşul sağlanmadı: kullanılabilir bellek her pencerede "
                                       f"{fmt_pct(s.mem_available_warn_pct)} altında değil "
-                                      f"(son pencere medyanı {fmt_pct(medians[-1])}).")
+                                      f"({_window_name(i, len(medians))} medyanı "
+                                      f"{_pct_near(medians[i], s.mem_available_warn_pct)}).")
         if satisfied_supports == 0:
             return RuleOutcome(False, "Kullanılabilir bellek düşük, ancak swap / page-fault / PSI "
                                       "göstergelerinden hiçbiri baskıyı desteklemiyor; uyarı "
@@ -157,8 +189,9 @@ class MemoryPressureRule(Rule):
         severity = SEVERITY_CRITICAL if critical else SEVERITY_WARNING
         confidence = "yüksek" if satisfied_supports >= 2 else "orta"
         context = tuple(
-            f"{name} (PID {pid}): dönem içinde en fazla {fmt_bytes(value)} RSS"
-            for (pid, name), value in _aggregate_top(period, "top_memory", "rss_bytes", "max"))
+            f"{r.name} (PID {r.pid}): dönem içinde en fazla {fmt_bytes(r.value)} RSS"
+            for r in _aggregate_top(period, "top_memory", "rss_bytes", "max")) \
+            if _has_process_info(period) else (NO_PROCESS_INFO,)
         uncertainty = " ".join(filter(None, [
             COMMON_UNCERTAINTY,
             "MemAvailable çekirdeğin geri kazanılabilir bellek tahminidir; gerçek durum "
@@ -172,8 +205,8 @@ class MemoryPressureRule(Rule):
         summary = (
             f"Son {fmt_duration(end - start)} boyunca kullanılabilir bellek her pencerede "
             f"{fmt_pct(s.mem_available_warn_pct)} eşiğinin altında kaldı (son medyan "
-            f"{fmt_pct(medians[-1])}) ve {satisfied_supports} destekleyici gösterge eşiği aştı. "
-            "Bu durum bellek baskısı olasılığına işaret eder.")
+            f"{_pct_near(medians[-1], s.mem_available_warn_pct)}) ve {satisfied_supports} "
+            "destekleyici gösterge eşiği aştı. Bu durum bellek baskısı olasılığına işaret eder.")
         return RuleOutcome(True, "Bellek baskısı koşulları sağlandı.", AlertDraft(
             title=self.title, severity=severity, confidence=confidence, summary=summary,
             window_start=start, window_end=end, evidence=tuple(evidence), context=context,
@@ -249,7 +282,8 @@ class SustainedCpuRule(Rule):
         overall = mean(means) or 0.0
         confidence = ("yüksek" if min(fractions) >= 0.95 and overall >= s.cpu_high_pct + 5
                       else "orta")
-        context = tuple(_aggregate_top_cpu(period))
+        context = tuple(_aggregate_top_cpu(period)) if _has_process_info(period) \
+            else (NO_PROCESS_INFO,)
         notes = [COMMON_UNCERTAINTY,
                  "Yüksek CPU kullanımı tek başına sorun değildir; derleme, video işleme gibi "
                  "beklenen işler de bu uyarıyı tetikleyebilir.",
@@ -264,9 +298,10 @@ class SustainedCpuRule(Rule):
         if source_evidence is not None:
             evidence.append(source_evidence)
         summary = (
-            f"Son {fmt_duration(end - start)} boyunca her pencerede örneklerin en az "
-            f"{fmt_pct(s.cpu_min_fraction * 100, 0)}'i {fmt_pct(s.cpu_high_pct, 0)} CPU eşiğinin "
-            f"üzerindeydi (ortalama {fmt_pct(overall)}). {source_text}")
+            f"Son {fmt_duration(end - start)} boyunca her pencerede CPU kullanımı, örneklerin "
+            f"en az {fmt_pct(s.cpu_min_fraction * 100, 0)} kadarında "
+            f"{fmt_pct(s.cpu_high_pct, 0)} eşiğinin üzerindeydi (ortalama {fmt_pct(overall)}). "
+            f"{source_text}")
         return RuleOutcome(True, "Kalıcı CPU yoğunluğu koşulları sağlandı.", AlertDraft(
             title=self.title, severity=SEVERITY_WARNING, confidence=confidence,
             summary=summary, window_start=start, window_end=end, evidence=tuple(evidence),
@@ -278,68 +313,89 @@ class SustainedCpuRule(Rule):
             )))
 
 
+@dataclass(frozen=True)
+class ProcessAggregate:
+    """Dönem boyunca bir sürecin özetlenmiş değeri."""
+
+    pid: int
+    name: str
+    value: float  # "mean": listede göründüğü örneklerdeki ortalama; "max": en yüksek
+    seen: int  # sürecin "en yoğunlar" listesinde göründüğü örnek sayısı
+    rank: float  # sıralama ölçütü ("mean": dönem toplamı, "max": en yüksek değer)
+
+
 def _aggregate_top(period: Sequence[SystemSample], list_attr: str, value_attr: str,
-                   mode: str = "mean", n: int = 5) -> List[Tuple[Tuple[int, str], float]]:
+                   mode: str = "mean", n: int = 5) -> List[ProcessAggregate]:
     """Dönem boyunca örneklerin süreç özetlerini birleştirir.
 
-    "mean": örnek başına ortalama (listede görünmeyen örnekler 0 sayılır),
-    "max": dönem içindeki en yüksek değer. Son örnek yerine tüm dönem
-    kullanıldığından, koşul bittikten sonra güncellenen uyarı da doğru bağlamı korur.
+    Örnekler yalnızca en yoğun ilk N süreci taşır. "mean" kipinde ortalama, sürecin
+    listede göründüğü örnekler üzerinden alınır (görünmediği örnekleri 0 saymak
+    değeri olduğundan düşük gösterirdi) ve kaç örnekte göründüğü ayrıca verilir;
+    sıralama dönem toplamına göredir. "max": dönem içindeki en yüksek değer. Son örnek
+    yerine tüm dönem kullanıldığından, koşul bittikten sonra güncellenen uyarı da
+    doğru bağlamı korur.
     """
-    totals: Dict[Tuple[int, str], float] = {}
+    sums: Dict[Tuple[int, str], float] = {}
+    peaks: Dict[Tuple[int, str], float] = {}
+    counts: Dict[Tuple[int, str], int] = {}
     for sample in period:
         for p in getattr(sample, list_attr):
             value = getattr(p, value_attr)
             if value is None:
                 continue
             key = (p.pid, p.name)
-            if mode == "max":
-                totals[key] = max(totals.get(key, 0.0), float(value))
-            else:
-                totals[key] = totals.get(key, 0.0) + float(value)
-    if mode != "max":
-        count = max(len(period), 1)
-        totals = {k: v / count for k, v in totals.items()}
-    return sorted(totals.items(), key=lambda kv: kv[1], reverse=True)[:n]
+            sums[key] = sums.get(key, 0.0) + float(value)
+            peaks[key] = max(peaks.get(key, 0.0), float(value))
+            counts[key] = counts.get(key, 0) + 1
+    rows = [ProcessAggregate(pid, name,
+                             peaks[(pid, name)] if mode == "max" else sums[(pid, name)] / count,
+                             count, peaks[(pid, name)] if mode == "max" else sums[(pid, name)])
+            for (pid, name), count in counts.items()]
+    return sorted(rows, key=lambda r: r.rank, reverse=True)[:n]
 
 
 def _cpu_source_attribution(period: Sequence[SystemSample], overall: float, start: float,
                             end: float, s: AnalysisSettings) -> Tuple[str, Optional[Evidence]]:
     """Yükün tek bir süreç adından mı geldiğini, yoksa dağınık mı olduğunu açıklar.
 
-    Aynı adlı süreçler (ör. paralel derleyici örnekleri) tek grup sayılır. Grubun dönem
-    ortalaması toplam CPU ortalamasının ``cpu_process_share`` oranını aşarsa yoğunluk
-    "süreç kaynaklı" olarak nitelenir. Süreç listesi yoksa yalnızca belirsizlik bildirilir.
+    Aynı adlı süreçler (ör. paralel derleyici örnekleri) tek grup sayılır. Pay, grubun
+    dönem toplamının dönemdeki **tüm** örnek sayısına bölünmesiyle bulunur (listede
+    görünmediği örnekler 0 sayılır; aksi hâlde tek örnekte görülen bir süreç payı
+    şişirirdi) ve toplam CPU ortalamasıyla karşılaştırılır. Pay ``cpu_process_share``
+    oranını aşarsa yoğunluk "süreç kaynaklı" olarak nitelenir. Bu bilgi bağlamdır;
+    tetiklemeyi etkilemez. Süreç listesi yoksa yalnızca belirsizlik bildirilir.
     """
-    per_process = _aggregate_top(period, "top_cpu", "cpu_percent", "mean", n=50)
-    if not per_process or overall <= 0:
+    rows = _aggregate_top(period, "top_cpu", "cpu_percent", "mean", n=50)
+    if not rows or overall <= 0 or not period:
         return ("Süreç verisi olmadığından yükün kaynağı belirlenemedi.", None)
     groups: Dict[str, Tuple[float, int]] = {}
-    for (_pid, name), value in per_process:
-        total, count = groups.get(name, (0.0, 0))
-        groups[name] = (total + value, count + 1)
-    name, (value, count) = max(groups.items(), key=lambda kv: kv[1][0])
-    share = min(value / overall, 1.0)
+    for row in rows:
+        total, count = groups.get(row.name, (0.0, 0))
+        groups[row.name] = (total + row.rank, count + 1)  # rank = dönem toplamı
+    name, (period_total, count) = max(groups.items(), key=lambda kv: kv[1][0])
+    share = min(period_total / len(period) / overall, 1.0)
     dominant = share >= s.cpu_process_share
     label = f"{name}" + (f" ({count} süreç)" if count > 1 else "")
     evidence = Evidence(
         metric="top_process_share", label=f"En yoğun süreç grubunun payı: {label}",
         value=round(share * 100.0, 1), threshold=round(s.cpu_process_share * 100.0, 1),
         comparison=">=", unit="%", window_start=start, window_end=end, satisfied=dominant,
-        role="context", note="Süreç ortalaması / toplam CPU ortalaması")
+        role="context", note="Grubun dönem ortalaması / toplam CPU ortalaması")
     if dominant:
-        text = (f"Yükün yaklaşık {fmt_pct(share * 100, 0)}'i {label} kaynaklı; yoğunluk büyük "
-                "olasılıkla bu süreç(ler)den geliyor.")
+        text = (f"Yükün yaklaşık {fmt_pct(share * 100, 0)} kadarı {label} kaynaklı; yoğunluk "
+                "büyük olasılıkla bu süreç(ler)den geliyor.")
     else:
         text = (f"En yoğun süreç grubu ({label}) yükün yalnızca yaklaşık "
-                f"{fmt_pct(share * 100, 0)}'ini oluşturuyor; yük birden fazla sürece dağılmış.")
+                f"{fmt_pct(share * 100, 0)} kadarını oluşturuyor; yük birden fazla sürece "
+                "dağılmış.")
     return text, evidence
 
 
 def _aggregate_top_cpu(period: Sequence[SystemSample], n: int = 5) -> List[str]:
-    """Dönem boyunca örneklerde görülen süreçlerin ortalama CPU payı."""
-    return [f"{name} (PID {pid}): ortalama {fmt_pct(value)} CPU"
-            for (pid, name), value in _aggregate_top(period, "top_cpu", "cpu_percent", "mean", n)]
+    """Dönem boyunca en yoğunlar listesinde görülen süreçlerin ortalama CPU payı."""
+    return [f"{r.name} (PID {r.pid}): ortalama {fmt_pct(r.value)} CPU (en yoğunlar "
+            f"listesinde {r.seen}/{len(period)} örnekte)"
+            for r in _aggregate_top(period, "top_cpu", "cpu_percent", "mean", n)]
 
 
 # ---------------------------------------------------------------------------
@@ -382,10 +438,21 @@ class DiskIoAnomalyRule(Rule):
             satisfied=base_ok, role="context",
             note=(f"{len(base_tp)} örnek" if base_ok else
                   f"Yetersiz taban verisi ({len(base_tp)}/{need_base} örnek); oran "
-                  "karşılaştırması yapılamadı"))]
+                  "karşılaştırması yapılamadı")),
+            Evidence(
+                metric="baseline_busy_percent", label="Önceki dönem disk meşguliyeti (medyan)",
+                value=None if base_busy_med is None else round(base_busy_med, 1),
+                threshold=s.disk_busy_pct, comparison="<", unit="%", window_start=base_start,
+                window_end=eval_start,
+                satisfied=base_busy_med is None or base_busy_med < s.disk_busy_pct,
+                role="context",
+                note=("Meşguliyet koşulu için önceki dönemin eşiğin altında olması gerekir"
+                      if base_busy_med is not None else
+                      "Yetersiz taban verisi; meşguliyet koşulu taban olmadan değerlendirilir"))]
         ratio_flags: List[bool] = []
         busy_flags: List[bool] = []
         tps: List[float] = []
+        busies: List[Optional[float]] = []
         for w in windows:
             vals = w.values(lambda x: x.disk_total_bytes_per_s)
             if len(vals) < need:
@@ -395,6 +462,7 @@ class DiskIoAnomalyRule(Rule):
             tps.append(tp)
             busy_vals = w.values("disk_busy_percent")
             busy = median(busy_vals)
+            busies.append(busy)
             ratio_ok = tp_threshold is not None and tp >= tp_threshold
             busy_ok = busy is not None and busy >= s.disk_busy_pct
             ratio_flags.append(ratio_ok)
@@ -405,8 +473,8 @@ class DiskIoAnomalyRule(Rule):
                 threshold=None if tp_threshold is None else round(tp_threshold, 1),
                 comparison=">=", unit="B/sn", window_start=w.start, window_end=w.end,
                 satisfied=ratio_ok, role="trigger",
-                note=(f"Eşik = max({tr_num(s.disk_ratio, 1)} × taban, "
-                      f"{tr_num(s.disk_min_throughput_mib_s, 0)} MiB/sn)")))
+                note=(f"Eşik = max({_compact(s.disk_ratio)} × taban, "
+                      f"{_compact(s.disk_min_throughput_mib_s)} MiB/sn)")))
             evidence.append(Evidence(
                 metric="disk_busy_percent", label="Disk meşguliyeti (pencere medyanı)",
                 value=None if busy is None else round(busy, 1), threshold=s.disk_busy_pct,
@@ -430,29 +498,42 @@ class DiskIoAnomalyRule(Rule):
         ratio_cond = all(ratio_flags)
         busy_cond = all(busy_flags) and (base_busy_med is None or base_busy_med < s.disk_busy_pct)
         if not (ratio_cond or busy_cond):
-            values = " / ".join(fmt_rate(tp) for tp in tps)
+            parts = []
             if tp_threshold is None:
-                detail = ("taban verisi yetersiz ve meşguliyet eşiği her pencerede aşılmadı "
-                          f"(pencere medyanları {values})")
+                parts.append("taban verisi yetersiz olduğundan oran karşılaştırması yapılamadı")
             else:
-                detail = (f"okuma+yazma eşiği ({fmt_rate(tp_threshold)}) her pencerede "
-                          f"aşılmadı (pencere medyanları {values}); meşguliyet koşulu da "
-                          "sağlanmadı")
-            return RuleOutcome(False, f"Koşul sağlanmadı: {detail}.")
+                i = ratio_flags.index(False)
+                parts.append(f"{_window_name(i, len(windows))} okuma+yazma medyanı "
+                             f"{fmt_rate(tps[i])}, eşik {fmt_rate(tp_threshold)}")
+            if not all(busy_flags):
+                i = busy_flags.index(False)
+                busy_text = "ölçülemedi" if busies[i] is None else fmt_pct(busies[i])
+                parts.append(f"{_window_name(i, len(windows))} meşguliyet medyanı {busy_text} "
+                             f"(eşik {fmt_pct(s.disk_busy_pct, 0)})")
+            else:
+                parts.append("meşguliyet her pencerede yüksek ama önceki dönemde de yüksekti "
+                             f"(medyan {fmt_pct(base_busy_med)})")
+            return RuleOutcome(False, f"Koşul sağlanmadı: {'; '.join(parts)}.")
 
         reasons = []
         if ratio_cond:
             reasons.append(f"okuma+yazma hızı önceki döneme göre en az "
-                           f"{tr_num(s.disk_ratio, 1)} kat arttı (son pencere "
+                           f"{_compact(s.disk_ratio)} kat arttı (son pencere "
                            f"{fmt_rate(tps[-1])}, taban {fmt_rate(base_med)})")
         if busy_cond:
             reasons.append(f"disk meşguliyeti her pencerede {fmt_pct(s.disk_busy_pct, 0)} "
-                           "eşiğini aştı")
+                           "eşiğini aştı ("
+                           + ("önceki dönem medyanı " + fmt_pct(base_busy_med)
+                              if base_busy_med is not None else "önceki dönem verisi yok")
+                           + ")")
         confidence = "orta" if ratio_cond and busy_cond else "düşük"
         context = tuple(
-            f"{name} (PID {pid}): ortalama {fmt_rate(value)}"
-            for (pid, name), value in _aggregate_top(period, "top_io", "io_bytes_per_s", "mean"))
-        if not context:
+            f"{r.name} (PID {r.pid}): ortalama {fmt_rate(r.value)} (en yoğunlar listesinde "
+            f"{r.seen}/{len(period)} örnekte)"
+            for r in _aggregate_top(period, "top_io", "io_bytes_per_s", "mean"))
+        if not _has_process_info(period):
+            context = (NO_PROCESS_INFO,)
+        elif not context:
             context = ("Erişilebilen süreçlerde belirgin G/Ç bulunamadı (diğer kullanıcıların "
                        "süreçleri root olmadan okunamaz).",)
         uncertainty = " ".join([

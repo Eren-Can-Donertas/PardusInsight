@@ -13,9 +13,12 @@ BİL461 İşletim Sistemleri · 2026–2027 Güz · TOBB ETÜ · Aşama 2 teslim
 > `source_code/` klasöründe çalıştırın (`cd source_code`). Git deposundan klonladıysanız
 > deponun kökü aynı klasördür.
 
-> **Doğrulama durumu:** Otomatik testler ve ölçümler Ubuntu 24.04 geliştirme makinesinde
-> yapıldı. **Pardus 25.1 XFCE üzerinde henüz test edilmedi.** Ayrıntılar teknik raporun
-> 12. bölümünde ve [PARDUS_VALIDATION.md](PARDUS_VALIDATION.md) belgesindedir.
+> **Doğrulama durumu:** Otomatik testler her push'ta GitHub Actions'ta **resmî Pardus 25.1 ve
+> 25.2 Docker imajlarında** (Pardus deposundaki paketlerle, standart kullanıcıyla), Ubuntu'da ve
+> Windows'ta çalışır. Kapsayıcı Pardus'un kullanıcı alanını sağlar; çekirdek GitHub
+> sunucusunundur ve masaüstü yoktur. **Temiz bir Pardus 25.1 XFCE VM'de doğrulama henüz
+> yapılmadı.** Ayrıntılar: [PARDUS_VALIDATION.md](PARDUS_VALIDATION.md),
+> [docs/PARDUS_DOGRULAMA.md](docs/PARDUS_DOGRULAMA.md).
 
 ---
 
@@ -85,7 +88,17 @@ python3 -m venv .venv
 PyPI'den kurulan PySide6, X11'de `libxcb-cursor0` paketini ister:
 `sudo apt install libxcb-cursor0`.
 
-### 4.3 Menüye kısayol (isteğe bağlı, root gerekmez)
+### 4.3 Pardus/Debian paketiyle (`.deb`: menü kaydı, simge, `man pardusinsight`)
+
+```bash
+python3 scripts/build_deb.py                         # dist/pardusinsight_0.1.0_all.deb üretir
+sudo apt install ./dist/pardusinsight_0.1.0_all.deb  # bağımlılıklar Pardus deposundan gelir
+pardusinsight                                        # veya menü: Sistem → PardusInsight
+```
+
+Ayrıntılar: [docs/PAKETLEME.md](docs/PAKETLEME.md)
+
+### 4.4 Menüye kısayol, paket kurmadan (isteğe bağlı, root gerekmez)
 
 ```bash
 sh scripts/install_user.sh            # ~/.local/share/applications/pardusinsight.desktop
@@ -180,12 +193,17 @@ python3 -m pytest -q -m "not linux"  # yalnızca deterministik testler (canlı /
 python3 -m pytest -q -m linux        # canlı /proc ile psutil karşılaştırması (10'ar örnek)
 python3 scripts/validate_metrics.py --rounds 10   # doğrulama tablosu
 python3 scripts/perf_check.py --gui --duration 60 # uygulamanın CPU/RAM ölçümü ve donmama kontrolü
-sh scripts/pardus_validate.sh        # Pardus'ta otomatik doğrulama (sonuçları klasöre yazar)
+make kapsam                          # satır kapsamı raporuyla
+python3 scripts/pardus_kabul.py --gui --cikti docs/PARDUS_SONUCLARI.md   # Pardus VM'de kabul listesi
 ```
 
-Geliştirme makinesinde (Ubuntu 24.04, Python 3.12.3) son sonuçlar: **136 test geçti, 0 başarısız**.
-Debian 13'teki PySide6 6.8.2 ile de 136/136 geçti. psutil/PySide6 kurulu değilken 121 test
-geçer, 7'si atlanır. ruff ve mypy temiz. Ayrıntılar teknik rapordadır.
+[![CI](https://github.com/Eren-Can-Donertas/PardusInsight/actions/workflows/ci.yml/badge.svg)](https://github.com/Eren-Can-Donertas/PardusInsight/actions/workflows/ci.yml)
+
+Testler her push'ta GitHub Actions'ta Ubuntu (Python 3.9 ve 3.13), Windows ve resmî Pardus
+25.1/25.2 kapsayıcılarında çalışır. Pardus kapsayıcısında `.deb` paketi de apt ile kurulup
+denenir, kabul betiği çalıştırılır. Ayrı bir iş akışı 35 dakikalık uzun koşuda bellek sınırını
+denetler. Güncel sonuçlar ve test envanteri: [TEST_REPORT.md](TEST_REPORT.md) (Aşama 2 özeti)
+ve [docs/TEST_RAPORU.md](docs/TEST_RAPORU.md) (ayrıntılı test kaydı).
 
 ## 11. Sorun giderme
 
@@ -201,7 +219,10 @@ geçer, 7'si atlanır. ruff ve mypy temiz. Ayrıntılar teknik rapordadır.
 
 ## 12. Bilinen kısıtlar
 
-- **Pardus 25.1 XFCE üzerinde henüz test edilmedi.** Eşikler hedef ortamda kalibre edilmedi.
+- **Temiz Pardus 25.1 XFCE VM'de henüz doğrulanmadı.** Testler Pardus kapsayıcısında (kullanıcı
+  alanı) çalışıyor, ama gerçek Pardus çekirdeği, XFCE oturumu ve görünüm denenmedi.
+- Eşikler gerçek kullanım verisiyle kalibre edilmedi. Kalibrasyon aracı hazır
+  (`scripts/kalibrasyon.py`, [docs/KALIBRASYON_SENTETIK.md](docs/KALIBRASYON_SENTETIK.md)).
 - Root olmadan diğer kullanıcıların süreç G/Ç sayaçları okunamaz.
 - Süreç değerleri örnekleme anlarına aittir; 2 saniyeden kısa yaşayan süreçler görünmeyebilir.
 - RSS paylaşılan belleği birden fazla sayabilir. NVMe/SSD'de disk meşguliyeti doygunluğu abartabilir.
@@ -233,9 +254,15 @@ pardusinsight/   collectors/ (procfs, system, processes, synthetic)  core/ (mode
                  history, service, formatting)  analysis/ (windows, rules, engine, explain,
                  methodology)  export/ (csv, json, atomic)  ui/ (main_window, worker, charts, ...)
                  cli.py  config.py
-tests/           136 otomatik test        scenarios/  önceden kaydedilmiş sentetik senaryolar
-scripts/         doğrulama, performans, ekran görüntüsü, teslim paketi, kurulum betikleri
-docs/            KURULUM, KULLANIM, KURALLAR, MIMARI, RAPOR_FORMATI, GOREV_DAGILIMI
+tests/           otomatik testler (birim, entegrasyon, GUI, güvenlik, paket, kabul betiği)
+scenarios/       önceden kaydedilmiş sentetik senaryolar (her kural için pozitif + karşı-örnek)
+scripts/         validate_metrics, perf_check, generate_scenarios, capture_screenshots,
+                 build_deb (.deb), kalibrasyon (eşik kalibrasyonu), pardus_kabul (Pardus kabul
+                 listesi otomasyonu), build_submission (teslim ZIP'i), install_user.sh
+packaging/       Debian paket dosyaları, .desktop, simge, man sayfası
+.github/         CI: Ubuntu, Windows ve resmî Pardus 25.1/25.2 kapsayıcıları; 35 dk uzun koşu
+docs/            KURULUM, KULLANIM, KURALLAR, MIMARI, RAPOR_FORMATI, GOREV_DAGILIMI, PAKETLEME,
+                 KALIBRASYON_SENTETIK, TEST_RAPORU, PARDUS_DOGRULAMA
 report/          teknik raporun kaynağı (HTML) ve PDF üretim betiği
 ```
 
@@ -244,7 +271,9 @@ report/          teknik raporun kaynağı (HTML) ve PDF üretim betiği
 | [docs/MIMARI.md](docs/MIMARI.md) | Katmanlar, iş parçacığı modeli, tasarım kararları |
 | [docs/KURALLAR.md](docs/KURALLAR.md) | Kuralların tanımı, eşik sınırları, kalibrasyon planı |
 | [docs/GOREV_DAGILIMI.md](docs/GOREV_DAGILIMI.md) | Modül sahipliği ve Git çalışma düzeni |
-| [TEST_REPORT.md](TEST_REPORT.md) | Test ve ölçüm sonuçları |
+| [docs/PAKETLEME.md](docs/PAKETLEME.md) · [docs/KALIBRASYON_SENTETIK.md](docs/KALIBRASYON_SENTETIK.md) | `.deb` paketi; eşik kalibrasyon yöntemi |
+| [docs/TEST_RAPORU.md](docs/TEST_RAPORU.md) · [docs/PARDUS_DOGRULAMA.md](docs/PARDUS_DOGRULAMA.md) | Ayrıntılı test kaydı (CI, Pardus kapsayıcısı); Pardus kabul listesi |
+| [TEST_REPORT.md](TEST_REPORT.md) | Aşama 2 test ve ölçüm özeti |
 | [REQUIREMENTS_MATRIX.md](REQUIREMENTS_MATRIX.md) | Gereksinim izlenebilirlik matrisi |
 | [PARDUS_VALIDATION.md](PARDUS_VALIDATION.md) | Pardus kurulum ve kabul listesi |
 | [VIDEO_PLAN.md](VIDEO_PLAN.md) · [ORAL_EXAM_PREP.md](ORAL_EXAM_PREP.md) · [FINAL_CHECKLIST.md](FINAL_CHECKLIST.md) | Video planı, sözlü sınav hazırlığı, teslim kontrol listesi |
@@ -253,8 +282,16 @@ Teslim paketi `python3 scripts/build_submission.py` ile `dist/PardusInsight.zip`
 
 ## 16. Yapay zekâ kullanımı
 
-Bu sürümün kodu, testleri ve belgeleri, ekibin Aşama 1 önerisi ve Aşama 2 yönergesi girdi olarak
-verilerek **Anthropic Claude (Claude Code)** ile üretildi. Testler ve ölçümler gerçekten çalıştırıldı
-ve sonuçları olduğu gibi raporlandı. Pardus testi yapılamadığı açıkça belirtildi. Her üye kodu
-anlayıp açıklayabilmeli; Pardus doğrulaması, eşik kalibrasyonu, demo videosu ve üye katkılarının
-kaydı ekip tarafından tamamlanmalıdır. Ayrıntılı beyan: teknik raporun 18. bölümü.
+- **İlk sürüm ve Aşama 2 teslim hazırlığı:** Kod, testler ve belgeler, ekibin Aşama 1 önerisi ve
+  Aşama 2 yönergesi girdi olarak verilerek **Anthropic Claude (Claude Code)** ile üretildi.
+  Testler ve ölçümler gerçekten çalıştırıldı, sonuçları olduğu gibi raporlandı.
+- **Oğuz'un görevleri:** Paketleme (`.deb`), sürekli entegrasyon (resmî Pardus 25.1 kapsayıcısı
+  dahil), eşik kalibrasyon aracı, Pardus kabul betiği, zaman penceresi ve kural testleri ile kod
+  incelemesinde bulunan hataların düzeltilmesi de **Claude Code** desteğiyle yapıldı. Kod
+  incelemesinde her bulgu kod çalıştırılarak yeniden üretildi ve bağımsız olarak doğrulandı.
+  Düzeltmeler, eski kodda başarısız olan regresyon testleriyle birlikte commit'lendi. İlgili
+  commit'ler `Co-Authored-By: Claude` satırı taşır.
+- **Ekibin sorumluluğu:** Her üye kodu anlayıp açıklayabilmelidir. XFCE VM doğrulaması, gerçek
+  kullanımla kalibrasyon, demo videosu ve üye katkılarının kaydı ekip tarafından tamamlanmalıdır.
+
+Ayrıntılı beyan: teknik raporun 18. bölümü.

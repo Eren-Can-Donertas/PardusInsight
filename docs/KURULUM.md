@@ -1,13 +1,29 @@
 # Kurulum ve Çalıştırma (Pardus 25.1 XFCE)
 
-> **Durum:** Aşağıdaki adımlar Pardus 25.1'in Debian 13 (trixie) tabanlı olduğu
-> varsayımıyla hazırlandı. Debian 13 deposunda `python3-pyside6.qtwidgets` (6.8.2) ve
-> `python3-psutil` paketleri bulunur. **Adımlar henüz temiz bir Pardus 25.1 XFCE VM'de
-> denenmedi.** Paket adlarını `apt-cache policy <paket>` ile doğrulayın ve sonucu
-> [PARDUS_VALIDATION.md](../PARDUS_VALIDATION.md) listesine işleyin.
+> **Durum:** Paket adları ve kurulum adımları (seçenek A ve `.deb`), resmî Pardus 25.1 Docker
+> imajında (`pardus/yirmibes:1`) her push'ta CI ile doğrulanıyor. Bağımlılıklar Pardus
+> deposundan geliyor: Python 3.13.5, PySide6 6.8.2.1, psutil 7.0.0. Temiz bir XFCE VM'de
+> masaüstü oturumuyla yapılacak kontroller [PARDUS_DOGRULAMA.md](PARDUS_DOGRULAMA.md)'de
+> listelenmiştir; `scripts/pardus_kabul.py` bunları tek komutla çalıştırır.
 
-PardusInsight'ın **çalışması** root gerektirmez. `sudo` yalnızca aşağıdaki seçenek A'da
-sistem paketlerini kurmak için gerekir; seçenek B tamamen kullanıcı yetkisiyle kurulur.
+PardusInsight'ın **çalışması** root gerektirmez. `sudo` yalnızca paket kurulumunda (`.deb` ve
+seçenek A) gerekir; seçenek B tamamen kullanıcı yetkisiyle kurulur.
+
+## Önerilen: `.deb` paketiyle kurulum
+
+Paket, bağımlılıkları (python3-psutil, python3-pyside6.*) Pardus deposundan kendisi çeker. Menü
+kaydı (Sistem → PardusInsight), simge, `man pardusinsight` kılavuzu ve hazır senaryolar
+(`/usr/share/pardusinsight/scenarios/`) ile gelir. Ayrıntılar: [PAKETLEME.md](PAKETLEME.md)
+
+```bash
+cd PardusInsight
+python3 scripts/build_deb.py                        # dist/pardusinsight_0.1.0_all.deb
+sudo apt install ./dist/pardusinsight_0.1.0_all.deb
+pardusinsight                                        # veya menüden
+sudo apt remove pardusinsight                        # kaldırma
+```
+
+Paket, GitHub Actions'taki her derlemede yapıt (artifact) olarak da üretilir.
 
 ## Gereksinimler
 
@@ -20,7 +36,7 @@ sistem paketlerini kurmak için gerekir; seçenek B tamamen kullanıcı yetkisiy
 ```bash
 sudo apt update
 sudo apt install python3 python3-psutil \
-     python3-pyside6.qtcore python3-pyside6.qtgui python3-pyside6.qtwidgets
+     python3-pyside6.qtcore python3-pyside6.qtgui python3-pyside6.qtwidgets qt6-qpa-plugins
 # testler için (isteğe bağlı)
 sudo apt install python3-pytest
 
@@ -45,16 +61,20 @@ PyPI'deki PySide6 tekerlekleri X11'de `libxcb-cursor0` ister. Uygulama
 sudo apt install libxcb-cursor0
 ```
 
-## Menüye kısayol ekleme (kullanıcı düzeyinde)
+## Menüye kısayol ekleme (kullanıcı düzeyinde, A/B seçenekleri için)
+
+`.deb` paketi menü kaydını kendisi kurar. Depodan çalıştırırken (seçenek A veya B):
 
 ```bash
-scripts/install_user.sh            # ~/.local/share/applications/pardusinsight.desktop oluşturur
+scripts/install_user.sh            # ~/.local/share/applications/pardusinsight.desktop + simge
 ```
 
-Betik yalnızca kullanıcının kendi dizinine bir `.desktop` dosyası yazar, root istemez.
+Betik yalnızca kullanıcının kendi dizinine bir `.desktop` dosyası ve simge yazar, root istemez.
 Kaldırmak için `scripts/install_user.sh --remove` kullanın.
 
 ## Çalıştırma modları
+
+`.deb` paketiyle kurulduysa `python3 -m pardusinsight` yerine kısaca `pardusinsight` yazılır.
 
 | Komut | Açıklama |
 |---|---|

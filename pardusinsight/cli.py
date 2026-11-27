@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import os
 import sys
 import time
 from dataclasses import replace
-from typing import Optional, Sequence
+from typing import List, Optional, Sequence
 
 from . import APP_NAME, __version__
 from .analysis.explain import alert_to_text
@@ -66,8 +67,10 @@ SYNTHETIC_BANNER = ("=" * 72 + "\n DEMO / SENTETİK VERİ — aşağıdaki değe
                     "DEĞİLDİR.\n" + "=" * 72)
 
 
-def resolve_settings(args: argparse.Namespace) -> AppSettings:
-    settings = load_settings_file(args.config) if args.config else AppSettings()
+def resolve_settings(args: argparse.Namespace,
+                     warnings: Optional[List[str]] = None) -> AppSettings:
+    """Ayar dosyası + komut satırı seçenekleri. ``warnings`` verilirse uyarılar eklenir."""
+    settings = load_settings_file(args.config, warnings) if args.config else AppSettings()
     if args.interval is not None:
         settings = settings.with_interval(args.interval)
     if args.history_minutes is not None:
@@ -76,7 +79,52 @@ def resolve_settings(args: argparse.Namespace) -> AppSettings:
         settings = replace(settings, analysis=replace(settings.analysis, window_s=args.window))
     if args.process_every is not None:
         settings = replace(settings, process_every=args.process_every)
-    return settings.validate()
+    settings = settings.validate()
+    if args.headless and (args.export_csv or args.export_json):
+        settings = _cover_planned_run(settings, args, warnings)
+    if warnings is not None:
+        warnings.extend(settings.warnings())
+    return settings
+
+
+def _cover_planned_run(settings: AppSettings, args: argparse.Namespace,
+                       warnings: Optional[List[str]]) -> AppSettings:
+    """Dışa aktarılacak headless kaydın tamamı tamponda kalsın (ör. 1 sa kalibrasyon kaydı).
+
+    Tampon varsayılan olarak son 30 dk'yı tutar; daha uzun bir --duration/--ticks
+    kaydında ilk kısım sessizce atılır ve rapordaki uyarıların kanıt örnekleri eksik kalırdı.
+    """
+    planned = args.duration
+    if planned is None and args.ticks is not None:
+        planned = args.ticks * settings.sample_interval_s
+    if planned is None or planned <= settings.history_minutes * 60:
+        return settings
+    minutes = min(240.0, float(math.ceil(planned / 60.0)) + 1.0)
+    if warnings is not None:
+        note = (f"Geçmiş tamponu, dışa aktarılacak kaydın tamamını tutmak için {minutes:g} dk'ya "
+                "çıkarıldı.")
+        if planned > 240 * 60:
+            note += " Kayıt 240 dk'dan uzun: raporda yalnızca son 240 dk bulunur."
+        warnings.append(note)
+    return replace(settings, history_minutes=minutes).validate()
+
+
+def export_problems(args: argparse.Namespace) -> List[str]:
+    """Dışa aktarma hedeflerinin klasörleri var ve yazılabilir mi?
+
+    İzlemeden ÖNCE denetlenir; 30 dk'lık bir kayıt, sonunda yazılamayan bir dosya
+    yüzünden kaybolmasın.
+    """
+    problems = []
+    for path in (p for p in (args.export_csv, args.export_json) if p):
+        folder = os.path.dirname(os.path.abspath(path))
+        if not os.path.isdir(folder):
+            problems.append(f"Dışa aktarma klasörü yok: {folder}")
+        elif not os.access(folder, os.W_OK):
+            problems.append(f"Dışa aktarma klasörüne yazılamıyor: {folder}")
+        elif os.path.isdir(path):
+            problems.append(f"Dışa aktarma hedefi bir klasör: {path}")
+    return problems
 
 
 def alerts_csv_path(samples_path: str) -> str:
@@ -95,20 +143,33 @@ def sample_line(sample: SystemSample, active: int, synthetic: bool = False) -> s
 
 
 def export_results(service: MonitorService, csv_path: Optional[str],
-                   json_path: Optional[str], out=None) -> None:
+                   json_path: Optional[str], out=None) -> bool:
+    """İstenen dosyaları yazar; biri başarısız olsa da diğerini dener. Başarılıysa True."""
     samples = service.history.snapshot()
     alerts = service.engine.alert_log()
+    ok = True
     if csv_path:
-        n = write_samples_csv(csv_path, samples, data_source=service.data_source)
         a_path = alerts_csv_path(csv_path)
-        m = write_alerts_csv(a_path, alerts)
-        print(f"CSV yazıldı: {csv_path} ({n} örnek), {a_path} ({m} uyarı)", file=out)
+        try:
+            n = write_samples_csv(csv_path, samples, data_source=service.data_source)
+            m = write_alerts_csv(a_path, alerts)
+        except OSError as exc:
+            ok = False
+            print(f"CSV yazılamadı ({csv_path}): {exc.strerror or exc}", file=sys.stderr)
+        else:
+            print(f"CSV yazıldı: {csv_path} ({n} örnek), {a_path} ({m} uyarı)", file=out)
     if json_path:
         report = build_report(samples, alerts, settings_to_dict(service.settings),
                               source=service.data_source)
-        write_json_report(json_path, report)
-        print(f"JSON rapor yazıldı: {json_path} ({len(samples)} örnek, {len(alerts)} uyarı)",
-              file=out)
+        try:
+            write_json_report(json_path, report)
+        except OSError as exc:
+            ok = False
+            print(f"JSON rapor yazılamadı ({json_path}): {exc.strerror or exc}", file=sys.stderr)
+        else:
+            print(f"JSON rapor yazıldı: {json_path} ({len(samples)} örnek, {len(alerts)} uyarı)",
+                  file=out)
+    return ok
 
 
 def run_headless(service: MonitorService, args: argparse.Namespace, out=None) -> int:
@@ -141,15 +202,15 @@ def run_headless(service: MonitorService, args: argparse.Namespace, out=None) ->
             if args.duration is not None and time.monotonic() - started >= args.duration:
                 break
             if delay > 0:
-                next_at += delay
+                # Uzun süren bir turdan sonra kaçırılan turlar art arda koşturulmaz
+                next_at = max(next_at + delay, time.monotonic())
                 time.sleep(max(0.0, next_at - time.monotonic()))
     except KeyboardInterrupt:
         print("\nDurduruldu.", file=out)
     log = service.engine.alert_log()
     print(f"\nÖzet: {ticks} tur, tamponda {len(service.history)} örnek, {len(log)} uyarı "
           f"({sum(1 for a in log if a.active)} aktif).", file=out)
-    export_results(service, args.export_csv, args.export_json, out)
-    return 0
+    return 0 if export_results(service, args.export_csv, args.export_json, out) else 1
 
 
 def run_replay(path: str, settings: AppSettings, args: argparse.Namespace,
@@ -179,7 +240,20 @@ def warn_if_root(out=None) -> None:
               "çalıştırmanız önerilir.", file=out or sys.stderr)
 
 
+def _tolerate_unencodable_output() -> None:
+    """Windows'ta çıktı dosyaya yönlendirildiğinde konsol kodlaması (ör. cp1254) '✓', '≥'
+    gibi karakterleri kodlayamaz; çökmek yerine '?' yazılır."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(errors="replace")
+            except (ValueError, OSError):  # pragma: no cover - kapalı/özel akış
+                pass
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    _tolerate_unencodable_output()
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=getattr(logging, args.log_level), stream=sys.stderr,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -191,10 +265,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"Bilinmeyen senaryo: {args.synthetic}. Seçenekler: "
               f"{', '.join(scenario_names())}", file=sys.stderr)
         return 2
+    warnings: List[str] = []
     try:
-        settings = resolve_settings(args)
+        settings = resolve_settings(args, warnings)
     except (ValueError, OSError) as exc:
         print(f"Ayarlar geçersiz: {exc}", file=sys.stderr)
+        return 2
+    for warning in warnings:
+        print(f"Uyarı: {warning}", file=sys.stderr)
+    problems = export_problems(args) if args.headless else []
+    if problems:
+        for problem in problems:
+            print(problem, file=sys.stderr)
         return 2
     warn_if_root()
 
@@ -212,8 +294,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         service = run_replay(args.replay, settings, args)
         if service is None:
             return 1
-        export_results(service, args.export_csv, args.export_json)
-        return 0
+        return 0 if export_results(service, args.export_csv, args.export_json) else 1
     if args.synthetic:
         service = build_synthetic_service(args.synthetic, settings, seed=args.seed)
     else:

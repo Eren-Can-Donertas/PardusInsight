@@ -1,0 +1,15 @@
+#!/bin/sh
+# PardusInsight kaldırma öncesi betiği: kurulumda veya çalışma sırasında
+# oluşan Python bayt kodu önbelleğini temizler ki paket dizini artık dosya
+# bırakmadan kaldırılabilsin.
+set -e
+
+if command -v py3clean >/dev/null 2>&1; then
+    py3clean -p pardusinsight || true
+fi
+if [ -d /usr/share/pardusinsight ]; then
+    find /usr/share/pardusinsight -type d -name __pycache__ -prune \
+        -exec rm -rf {} + 2>/dev/null || true
+fi
+
+exit 0

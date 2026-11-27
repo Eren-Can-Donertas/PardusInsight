@@ -1,5 +1,7 @@
 """Entegrasyon: sentetik kaynak -> normalizasyon -> tampon -> kurallar (MonitorService)."""
+import sys
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -8,6 +10,7 @@ from pardusinsight.collectors.synthetic import (SyntheticProcessCollector, Synth
 from pardusinsight.config import AppSettings
 from pardusinsight.core.models import RawSnapshot
 from pardusinsight.core.service import MonitorService, build_synthetic_service
+from pardusinsight.export import load_json_report
 
 EXPECTED = {
     "normal": set(),
@@ -147,3 +150,76 @@ def test_apply_settings_changes_rule_thresholds():
     for _ in range(40):
         service.tick()
     assert any(a.rule_id == "sustained_cpu" for a in service.engine.alert_log())
+
+
+# ----------------------------------------------------------------------------- kayıtlı senaryolar
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+import generate_scenarios  # noqa: E402
+
+
+@pytest.mark.parametrize("name", generate_scenarios.FILES)
+def test_recorded_scenario_files_match_current_code(name):
+    path = ROOT / "scenarios" / f"{name}.json"
+    assert path.exists(), f"{path.name} yok: python3 scripts/generate_scenarios.py"
+    stored = load_json_report(str(path))
+    service = generate_scenarios.run(name)
+    assert stored.samples == service.history.snapshot(), \
+        "senaryo dosyası güncel değil: python3 scripts/generate_scenarios.py"
+    fresh = [(a.rule_id, a.first_seen, a.last_seen, a.resolved_at)
+             for a in service.engine.alert_log()]
+    assert [(a.rule_id, a.first_seen, a.last_seen, a.resolved_at) for a in stored.alerts] == fresh
+    assert {a.rule_id for a in stored.alerts} == EXPECTED[name]
+
+
+def test_each_rule_has_recorded_positive_and_negative_scenario():
+    files = set(generate_scenarios.FILES)
+    for rule in ("memory_pressure", "sustained_cpu", "disk_io_anomaly"):
+        assert any(EXPECTED[n] == {rule} for n in files), f"{rule}: pozitif kayıt yok"
+    for counter in ("memory_low_quiet", "cpu_spikes", "disk_steady"):
+        assert counter in files and EXPECTED[counter] == set()
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_expectations_do_not_depend_on_seed(seed):
+    for name, expected in EXPECTED.items():
+        fired = {a.rule_id for a in run_scenario(name, seed=seed).engine.alert_log()}
+        assert fired == expected, f"{name}, tohum {seed}"
+
+
+def test_coarse_interval_does_not_alias_short_spikes():
+    # 30 sn aralıkta her örnek tüm aralığın ortalamasını yansıtmalı; 8 sn'lik sıçramalar
+    # aralığın sonuna denk geldi diye kalıcı yük gibi görünmemeli
+    settings = AppSettings().with_interval(30.0)
+    settings = replace(settings, analysis=replace(settings.analysis, window_s=60.0))
+    source = SyntheticSource("cpu_spikes", step_s=30.0)
+    service = MonitorService(source, SyntheticProcessCollector(source), settings)
+    for _ in range(23):
+        service.tick()
+    cpu = [s.cpu_percent for s in service.history.snapshot() if s.cpu_percent is not None]
+    assert max(cpu) < 60.0  # 8/30 sn %98 + 22/30 sn %15 ≈ %37
+    assert service.engine.alert_log() == ()
+
+
+def test_phase_mixing_weights_overlap():
+    source = SyntheticSource("cpu", noise=False)
+    inside = source.mixed_phase(10.0, 12.0)
+    assert inside.name == "normal" and inside.cpu_percent == 15.0
+    half = source.mixed_phase(119.0, 121.0)  # 1 sn normal + 1 sn cpu-yogun
+    assert half.cpu_percent == pytest.approx((15.0 + 95.0) / 2)
+    assert source.mixed_phase(120.0, 122.0).name == "cpu-yogun"
+
+
+def test_process_collection_does_not_change_system_metrics():
+    def cpu_series(process_every, with_processes=True):
+        source = SyntheticSource("demo", seed=461)
+        settings = replace(AppSettings(), process_every=process_every)
+        collector = SyntheticProcessCollector(source) if with_processes else None
+        service = MonitorService(source, collector, settings)
+        for _ in range(60):
+            service.tick()
+        return [s.cpu_percent for s in service.history.snapshot()]
+
+    reference = cpu_series(1)
+    assert cpu_series(3) == reference
+    assert cpu_series(1, with_processes=False) == reference

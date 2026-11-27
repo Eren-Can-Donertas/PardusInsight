@@ -13,12 +13,14 @@ beklenir."
 | | `scripts/validate_metrics.py`, `scripts/perf_check.py` | /proc–psutil doğrulama tablosu, performans | — |
 | **Yusuf Yankı Ütgün** | `pardusinsight/ui/` | Ana pencere, grafikler, süreç tablosu, uyarı kartları, ayarlar, worker | `tests/test_gui.py` |
 | | `pardusinsight/export/`, `core/formatting.py`, `analysis/explain.py`, `analysis/methodology.py` | CSV/JSON raporları, Türkçe biçimlendirme, uyarı ve metodoloji metinleri | `tests/test_export.py` |
-| | `docs/KULLANIM.md`, `VIDEO_PLAN.md`, `docs/RAPOR_FORMATI.md`, `scripts/capture_screenshots.py` | Kullanıcı rehberi, demo ve video planı | — |
-| **Oğuz Giray Bori** | `pardusinsight/analysis/` (rules, engine, windows) , `config.py` | 3 kural, kural motoru, eşikler | `tests/test_rules.py`, `tests/test_engine.py` |
-| | `pardusinsight/collectors/synthetic.py`, `scenarios/`, `scripts/generate_scenarios.py` | Sentetik senaryolar | `tests/test_scenarios_service.py` |
-| | `tests/`, `pyproject.toml`, `cli.py`, `scripts/install_user.sh`, `scripts/build_submission.py` | Test otomasyonu, paketleme, komut satırı, teslim ZIP'i | `tests/test_cli_safety.py` |
-| | `TEST_REPORT.md`, `PARDUS_VALIDATION.md`, `scripts/pardus_validate.sh`, `docs/KURULUM.md` | Test raporu, Pardus kabul listesi | — |
-| Ortak | `README.md`, `docs/MIMARI.md`, `docs/KURALLAR.md`, `report/` (teknik rapor), `REQUIREMENTS_MATRIX.md`, `ORAL_EXAM_PREP.md`, `FINAL_CHECKLIST.md` | Teknik kararların kaydı, teslim belgeleri | — |
+| | `docs/KULLANIM.md`, `VIDEO_PLAN.md`, `docs/RAPOR_FORMATI.md`, `scripts/capture_screenshots.py` | Kullanıcı rehberi, demo ve video planı, ekran görüntüleri | — |
+| **Oğuz Giray Bori** | `pardusinsight/analysis/` (rules, engine, windows, calibration) , `config.py` | 3 kural, kural motoru, zaman pencereleri, eşikler ve kalibrasyon | `tests/test_rules.py`, `tests/test_engine.py`, `tests/test_windows.py`, `tests/test_config.py`, `tests/test_calibration.py` |
+| | `pardusinsight/collectors/synthetic.py`, `scenarios/`, `scripts/generate_scenarios.py` | Sentetik senaryolar (her kural için pozitif + karşı-örnek) | `tests/test_scenarios_service.py` |
+| | `tests/`, `.github/workflows/ci.yml`, `pyproject.toml`, `cli.py`, `scripts/perf_check.py`, `scripts/install_user.sh` | Test otomasyonu (CI: Ubuntu, Windows, resmî Pardus 25.1 kapsayıcısı), komut satırı | `tests/test_cli_safety.py` |
+| | `packaging/`, `scripts/build_deb.py`, `Makefile`, `scripts/build_submission.py` | Pardus/Debian `.deb` paketi, teslim ZIP'i | `tests/test_packaging.py` |
+| | `scripts/kalibrasyon.py`, `scripts/pardus_kabul.py` | Eşik kalibrasyonu ve Pardus kabul listesinin otomasyonu | `tests/test_calibration.py`, `tests/test_pardus_kabul.py` |
+| | `docs/TEST_RAPORU.md`, `docs/PARDUS_DOGRULAMA.md`, `docs/KURULUM.md`, `docs/PAKETLEME.md`, `docs/KALIBRASYON_SENTETIK.md` | Test raporu, Pardus kabul listesi, kurulum ve paketleme | — |
+| Ortak | `README.md`, `docs/MIMARI.md`, `docs/KURALLAR.md`, `report/` (teknik rapor), `TEST_REPORT.md`, `PARDUS_VALIDATION.md`, `REQUIREMENTS_MATRIX.md`, `ORAL_EXAM_PREP.md`, `FINAL_CHECKLIST.md` | Teknik kararların kaydı, Aşama 2 teslim belgeleri | — |
 
 ## Git geçmişi hakkında
 
@@ -33,12 +35,19 @@ Her üyenin katkısının Git kayıtlarında görünmesi için önerilen akış:
 1. Depoyu ortak bir uzak sunucuya (GitHub/GitLab) yükleyin. Her üye kendi hesabıyla çalışsın.
 2. Her üye kendi modülü için bir dal açsın (`eren/collectors-dogrulama`, `yusuf/ui-pardus`,
    `oguz/kalibrasyon`) ve şu işleri **kendi commit'leriyle** yapsın:
-   - **Eren:** Pardus'ta `validate_metrics.py` çıktısını TEST_REPORT.md'ye ekleme; farklı
+   - **Eren:** Pardus'ta `validate_metrics.py` çıktısını docs/TEST_RAPORU.md'ye ekleme; farklı
      çekirdek alanları ve PSI için kolektör düzeltmeleri; performans ölçümü.
    - **Yusuf:** XFCE açık/koyu temada arayüz kontrolü ve düzeltmeleri; kullanıcı rehberi
      ekran görüntüleri; demo videosu.
-   - **Oğuz:** Pardus VM'de eşik kalibrasyonu (KURALLAR.md); PARDUS_VALIDATION.md listesinin
+   - **Oğuz:** Pardus VM'de eşik kalibrasyonu (KURALLAR.md); PARDUS_DOGRULAMA.md listesinin
      doldurulması; paketleme.
+     *Durum (26.11.2026):*
+     - Tamamlandı: `.deb` paketleme; CI'da resmî Pardus 25.1/25.2 kapsayıcılarında testler,
+       paket kurulumu, kabul betiği ve 35 dk uzun koşu; kalibrasyon aracı ve yöntemi;
+       PARDUS_DOGRULAMA'nın kapsayıcıda doğrulanabilen maddeleri; test raporu.
+     - Kalan, XFCE VM gerektiren tek adım: `python3 scripts/pardus_kabul.py --gui
+       --kalibrasyon-suresi 1800 --kayit-klasoru docs/kayitlar --cikti docs/PARDUS_SONUCLARI.md`
+       ve raporun listelediği elle kontroller (menü, koyu tema, LibreOffice).
 3. Birleştirmeyi Pull Request ile yapın. Her PR'ı en az bir diğer üye incelesin (PDF: haftalık kod incelemesi).
 4. Her üye kendi modülünü sunumda açıklayabilecek düzeyde okumalıdır. Anlaşılmayan kısımlar
    sadeleştirilmeli veya belgelenmelidir.

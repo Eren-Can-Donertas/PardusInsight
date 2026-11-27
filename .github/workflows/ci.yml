@@ -1,0 +1,231 @@
+# PardusInsight sürekli entegrasyon (test otomasyonu).
+#
+#  * pip:    Ubuntu (Python 3.9 ve 3.13) ve Windows üzerinde tüm testler + kapsam,
+#            Python tekerleğinin kurulup çalıştırılması.
+#  * pardus: Resmî Pardus 25 kapsayıcısında (Docker Hub: pardus/yirmibes) Pardus
+#            deposundaki paketlerle (KURULUM.md seçenek A) testlerin STANDART
+#            KULLANICIYLA çalıştırılması, /proc–psutil doğrulaması, performans
+#            ölçümü, .deb paketinin apt ile kurulup denenmesi ve kaldırılması.
+#            Not: Kapsayıcı Pardus kullanıcı alanını sağlar; çekirdek GitHub
+#            sunucusunundur ve masaüstü oturumu yoktur (bkz. docs/PARDUS_DOGRULAMA.md).
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pip:
+    name: Python ${{ matrix.python }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, python: "3.9" }
+          - { os: ubuntu-24.04, python: "3.13" }
+          - { os: windows-latest, python: "3.13" }
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: Qt için sistem kütüphaneleri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - name: Bağımlılıklar
+        run: python -m pip install -r requirements-dev.txt coverage build
+      - name: Testler (kapsam ölçümüyle)
+        run: |
+          python -m coverage run -m pytest -q -rs | tee pytest.txt
+          echo "::notice title=pytest ${{ matrix.os }} py${{ matrix.python }}::$(tail -n 1 pytest.txt)"
+      - name: Kapsam raporu
+        run: |
+          python -m coverage report | tee coverage.txt
+          echo "::notice title=kapsam ${{ matrix.os }} py${{ matrix.python }}::$(tail -n 1 coverage.txt)"
+      - name: Python tekerleği oluştur, kur ve çalıştır
+        run: |
+          python -m build
+          python -m pip install dist/*.whl
+          cd "$RUNNER_TEMP"
+          pardusinsight --version
+          pardusinsight --headless --synthetic cpu --speed 0 --ticks 120 --quiet | tail -n 3
+
+  pardus:
+    name: Pardus ${{ matrix.surum }} kapsayıcısı
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { surum: "25.1", imaj: "pardus/yirmibes:1" }
+          - { surum: "25 (son)", imaj: "pardus/yirmibes:latest" }
+    container:
+      image: ${{ matrix.imaj }}
+      # Minimal imajda ca-certificates yok; GitHub sunucusunun güvenilir CA paketi
+      # yalnızca ilk ca-certificates kurulumunda kullanılmak üzere salt-okunur bağlanır.
+      volumes:
+        - /etc/ssl/certs/ca-certificates.crt:/opt/ci/sunucu-ca.crt:ro
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      QT_QPA_PLATFORM: offscreen
+      LANG: C.UTF-8
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Sürüm bilgisi
+        run: |
+          cat /etc/os-release
+          uname -r
+          echo "::notice title=Pardus imaji ${{ matrix.surum }}::${{ matrix.imaj }} = $(. /etc/os-release; echo "$PRETTY_NAME (VERSION_ID=$VERSION_ID)"), çekirdek $(uname -r)"
+      - name: Pardus deposundan bağımlılıklar (KURULUM.md seçenek A)
+        run: |
+          set +e
+          cat /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null | grep -v '^#' | grep . > apt-kaynaklar.txt
+          echo "::notice title=apt kaynakları ${{ matrix.surum }}::$(sed -e ':a;N;$!ba;s/\n/ | /g' apt-kaynaklar.txt)"
+          # Depo HTTP isteğini HTTPS aynasına yönlendiriyor; imajda CA sertifikaları
+          # olmadığından ilk güncelleme ve ca-certificates kurulumu sunucunun CA paketiyle
+          # (TLS doğrulaması açık) yapılır, sonrası imajın kendi sertifikalarıyla.
+          HOSTCA="-o Acquire::https::CaInfo=/opt/ci/sunucu-ca.crt"
+          apt-get -o Acquire::Retries=3 $HOSTCA update > apt.log 2>&1 || exit 1
+          apt-get $HOSTCA install -y -q --no-install-recommends ca-certificates >> apt.log 2>&1 || exit 1
+          apt-get -o Acquire::Retries=3 --error-on=any update >> apt.log 2>&1 || exit 1
+          apt-cache policy python3 python3-psutil python3-pyside6.qtcore python3-pyside6.qtgui \
+            python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest > apt-policy.txt 2>&1
+          apt-get install -y -q --no-install-recommends ca-certificates git \
+            python3 python3-psutil python3-pyside6.qtcore python3-pyside6.qtgui \
+            python3-pyside6.qtwidgets qt6-qpa-plugins python3-pytest fonts-dejavu-core procps \
+            >> apt.log 2>&1 || exit 1
+          python3 -c 'import platform, psutil, PySide6; print(f"Python {platform.python_version()}, PySide6 {PySide6.__version__}, psutil {psutil.__version__}")' > surumler.txt 2>&1 || exit 1
+          echo "::notice title=Pardus paketleri ${{ matrix.surum }}::$(cat surumler.txt)"
+      - uses: actions/checkout@v5
+        with:
+          path: kaynak
+      - name: Standart (root olmayan, sudo yetkisiz) kullanıcı
+        run: |
+          useradd --create-home --shell /bin/bash ogrenci
+          chown -R ogrenci:ogrenci "$GITHUB_WORKSPACE/kaynak"
+          runuser -u ogrenci -- id
+      - name: Testler (standart kullanıcıyla)
+        working-directory: kaynak
+        run: |
+          runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 -m pytest -q -rs 2>&1 | tee ../pytest.txt
+          echo "::notice title=pytest Pardus ${{ matrix.surum }}::$(tail -n 1 ../pytest.txt)"
+      - name: /proc – psutil doğrulama tablosu (10 örnek)
+        working-directory: kaynak
+        run: |
+          runuser -u ogrenci -- python3 scripts/validate_metrics.py --rounds 10 --interval 1 2>&1 | tee ../dogrulama.txt
+          echo "::notice title=Doğrulama Pardus ${{ matrix.surum }}::$(grep 'En büyük farklar' ../dogrulama.txt)"
+          echo "::notice title=Doğrulama tablosu Pardus ${{ matrix.surum }}::$(sed -e 's/%/%25/g' ../dogrulama.txt | sed -e ':a;N;$!ba;s/\n/%0A/g')"
+      - name: Performans (GUI'siz ve GUI, 60 sn)
+        working-directory: kaynak
+        run: |
+          runuser -u ogrenci -- python3 scripts/perf_check.py --duration 60 2>&1 | tee ../perf.txt
+          runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 scripts/perf_check.py --gui --duration 60 2>&1 | tee -a ../perf.txt
+          echo "::notice title=Performans Pardus ${{ matrix.surum }}::$(sed -e 's/%/%25/g' ../perf.txt | sed -e ':a;N;$!ba;s/\n/%0A/g')"
+      - name: .deb paketini oluştur ve incele
+        working-directory: kaynak
+        run: |
+          apt-get install -y -q --no-install-recommends desktop-file-utils > ../deb.txt 2>&1
+          python3 scripts/build_deb.py --cikti ../dist 2>&1 | tee -a ../deb.txt
+          dpkg-deb --info ../dist/pardusinsight_*_all.deb 2>&1 | tee -a ../deb.txt
+          dpkg-deb --contents ../dist/pardusinsight_*_all.deb 2>&1 | tee -a ../deb.txt
+          desktop-file-validate packaging/pardusinsight.desktop 2>&1 | tee -a ../deb.txt
+      - name: lintian
+        run: |
+          apt-get install -y -q --no-install-recommends lintian > lintian-kurulum.log 2>&1
+          lintian --info --fail-on error dist/pardusinsight_*_all.deb 2>&1 | tee lintian.txt
+          echo "::notice title=lintian Pardus ${{ matrix.surum }}::$(grep -cE '^[EW]:' lintian.txt || true) hata/uyarı satırı; $(grep -E '^[EW]:' lintian.txt | head -n 5 | tr '\n' ' ')"
+      - name: .deb kurulumu (apt, bağımlılıklar Pardus deposundan)
+        run: |
+          apt-get install -y -q ./dist/pardusinsight_*_all.deb 2>&1 | tee kurulum.txt
+          dpkg -s pardusinsight | grep -E '^(Status|Version)' | tee -a kurulum.txt
+          test -x /usr/bin/pardusinsight
+          test -f /usr/share/pardusinsight/scenarios/demo.json
+          find /usr/share/pardusinsight -name '*.pyc' | wc -l | tee -a kurulum.txt
+      - name: Kurulu uygulama standart kullanıcıyla
+        run: |
+          OUT="$GITHUB_WORKSPACE"
+          cd /tmp
+          runuser -u ogrenci -- pardusinsight --version 2>&1 | tee "$OUT/kurulu.txt"
+          runuser -u ogrenci -- pardusinsight --headless --ticks 5 --interval 1 2>&1 | tee -a "$OUT/kurulu.txt"
+          if grep -q "okunamadı" "$OUT/kurulu.txt"; then echo "/proc okuma hatası" >&2; exit 1; fi
+          runuser -u ogrenci -- pardusinsight --headless --replay /usr/share/pardusinsight/scenarios/demo.json 2>&1 | tee "$OUT/demo.txt"
+          grep -q "Kalıcı CPU yoğunluğu" "$OUT/demo.txt"
+          grep -q "Bellek baskısı olasılığı" "$OUT/demo.txt"
+          grep -q "Disk G/Ç etkinliği anomalisi" "$OUT/demo.txt"
+      - name: GUI gerçek X11 (xcb) altında açılıyor mu (xvfb)
+        run: |
+          OUT="$GITHUB_WORKSPACE"
+          apt-get install -y -q --no-install-recommends xvfb xauth > "$OUT/xvfb-kurulum.log" 2>&1
+          cd /tmp
+          rc=0
+          runuser -u ogrenci -- env -u QT_QPA_PLATFORM xvfb-run -a -s "-screen 0 1280x800x24" \
+            timeout 20 pardusinsight --synthetic demo --speed 4 > "$OUT/gui.txt" 2>&1 || rc=$?
+          echo "çıkış kodu: $rc (124 = 20 sn boyunca açık kaldı, zaman aşımıyla kapatıldı)" | tee -a "$OUT/gui.txt"
+          test "$rc" -eq 124
+          echo "::notice title=GUI xcb Pardus ${{ matrix.surum }}::Arayüz xvfb altında 20 sn çökmeden çalıştı"
+      - name: Pardus kabul betiği (otomatik maddeler, standart kullanıcı)
+        # .deb kurulduktan sonra çalışır: menü kaydı (1.4) desktop-file-validate ile denetlenir
+        working-directory: kaynak
+        run: |
+          rc=0
+          runuser -u ogrenci -- env QT_QPA_PLATFORM=offscreen python3 scripts/pardus_kabul.py \
+            --cikti /tmp/kabul.md > ../kabul-cikti.txt 2>&1 || rc=$?
+          cp /tmp/kabul.md ../kabul.md 2>/dev/null || true
+          ozet=$(sed -n '/^## Özet/,/^## Elle/p' ../kabul.md | grep -v '^## ' | grep . | tr '\n' ' ')
+          echo "::notice title=Kabul betiği Pardus ${{ matrix.surum }} (çıkış $rc)::$ozet"
+          # GitHub iş notlarını ~4 KB'ta kestiği için raporun ana bölümü (eklerden önceki
+          # kısım) 3,5 KB'lık parçalarla yazılır; tamamı yapıt (artifact) olarak saklanır.
+          sed '/^## Ekler/,$d' ../kabul.md > ../kabul-ana.md
+          split -C 3500 ../kabul-ana.md ../kabul-parca-
+          for f in $(ls ../kabul-parca-* | head -n 8); do
+            printf '::notice title=Kabul raporu %s::%s\n' "$(basename "$f")" \
+              "$(sed -e 's/%/%25/g' "$f" | sed -e ':a;N;$!ba;s/\n/%0A/g')"
+          done
+          exit $rc
+      - name: Kaldırma ve artık dosya denetimi
+        run: |
+          apt-get purge -y -q pardusinsight 2>&1 | tee kaldirma.txt
+          test ! -e /usr/bin/pardusinsight
+          test ! -e /usr/share/pardusinsight
+          test ! -e /usr/share/applications/pardusinsight.desktop
+          echo "::notice title=Paket Pardus ${{ matrix.surum }}::apt ile kuruldu, standart kullanıcıyla çalıştı, kaldırıldı; artık dosya yok"
+      - name: Hata ayrıntıları (iş notu)
+        if: failure()
+        run: |
+          # Ayrıntılı günlükler yalnızca oturum açmış kullanıcılara açık olduğundan son
+          # yazılan çıktı dosyalarının sonu iş notu olarak da verilir.
+          for f in $(ls -t *.txt *.log 2>/dev/null | head -n 4); do
+            printf '::error title=%s::%s\n' "$f" "$(tail -n 40 "$f" | sed -e 's/%/%25/g' | sed -e ':a;N;$!ba;s/\n/%0A/g')"
+          done
+      - name: Çıktıları sakla
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: pardus-${{ strategy.job-index }}-sonuclar
+          path: |
+            dist/*.deb
+            *.txt
+            kabul.md
+          if-no-files-found: ignore

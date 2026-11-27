@@ -100,15 +100,71 @@ Karşılaştırmalar kodda ve testlerde aynı tanımlıdır (`tests/test_rules.p
 | CPU eşik üstü oranı | `≥` | 15 örnekten 12'si (%80) → tetikler; 11'i → tetiklemez |
 | Disk hızı medyanı / meşguliyet | `≥` | tam 5 MiB/sn veya tam %80 → tetikler |
 
-## Kalibrasyon planı (Pardus üzerinde yapılacak)
+## Kalibrasyon
 
-Eşikler geliştirme makinesinde sentetik verilerle seçildi ve **henüz Pardus 25.1 XFCE
-üzerinde kalibre edilmedi**. Önerilen yöntem:
+Eşikler geliştirme makinesinde sentetik verilerle seçildi. Hedef ortamda kalibrasyon için
+`pardusinsight/analysis/calibration.py` ve `scripts/kalibrasyon.py` hazırdır. Kalibrasyon
+kuralların ayrı bir benzetimini değil, **kuralların kendi kodunu** kullanır. Her eşik bir değer
+ızgarasında tek tek değiştirilir ve kayıtlar kural motoruyla (`replay`) yeniden analiz edilir.
 
-1. Temiz VM'de 30 dk olağan kullanım (tarayıcı + ofis) için JSON rapor alın
-   (`--headless --duration 1800 --export-json normal.json`).
-2. `summary.metrics` içindeki min/ortalama/maks değerlerine bakın. Olağan kullanımda hiçbir
-   kural tetiklenmemelidir (yanlış pozitif = 0 hedefi).
-3. Bilinen yoğun işlerde (ör. büyük bir projeyi derlemek, büyük dosya kopyalamak) tetiklenme
-   zamanlarını not edin. Bunlar stres testi değil, olağan kullanıcı işleridir.
-4. Gerekirse `config.py` varsayılanlarını güncelleyin ve gerekçeyi bu belgeye yazın.
+### Yöntem
+
+1. **Olağan kullanım kaydı:** Pardus 25.1 XFCE'de tarayıcı ve ofis ile olağan kullanım
+   sırasında 30 dk kayıt alın:
+   `pardusinsight --headless --duration 1800 --quiet --export-json normal.json`
+   (ya da kabul betiğiyle tek adımda: `python3 scripts/pardus_kabul.py --kalibrasyon-suresi 1800
+   --kayit-klasoru docs/kayitlar --cikti docs/PARDUS_SONUCLARI.md`).
+2. **(İsteğe bağlı) Bilinen yoğun işler:** Büyük bir projeyi derlemek, büyük dosya kopyalamak gibi
+   olağan ama ağır işler sırasında aynı komutla kısa kayıtlar alın. Bunlar stres testi değildir.
+3. **Analiz:**
+   `python3 scripts/kalibrasyon.py normal.json --yogun derleme.json:sustained_cpu --cikti kalibrasyon.md --oneri-json oneri.json`
+4. **Karar kuralı** (araç otomatik uygular, gerekçesini rapora yazar):
+   - Varsayılan değer olağan kullanım kaydında uyarı üretiyorsa (yanlış pozitif), uyarıyı sıfıra
+     indiren en yakın değer **bir adım güvenlik payıyla** önerilir.
+   - Varsayılan sessizse ama beklenen yoğun kaydı kaçırıyorsa, olağan kullanımda sessiz kalıp onu
+     yakalayan en yakın daha duyarlı değer önerilir.
+   - Aksi hâlde varsayılan korunur ve kaç adım daha duyarlı değerin de sessiz kaldığı (pay)
+     raporlanır.
+5. Öneriler önce `--config oneri.json` ile denenir. Kalıcı yapılacaksa `config.py` varsayılanları
+   ve bu belge gerekçesiyle güncellenir.
+
+Kaydın örnekleme aralığı ayarlardakinden farklıysa analiz o aralığa uyarlanır. Aksi hâlde 5 sn
+aralıklı bir kayıt 2 sn varsayımıyla "yetersiz veri" sayılır ve yanıltıcı biçimde hiç uyarı
+çıkmaz.
+
+### Taranan eşikler
+
+| Kural | Parametre | Izgara |
+|---|---|---|
+| Bellek baskısı | `mem_available_warn_pct` | %5 · 7,5 · **10** · 12,5 · 15 · 20 |
+| | `swap_activity_pages_s` | 25 · 50 · **100** · 200 · 400 sayfa/sn |
+| | `major_faults_s` | 25 · 50 · **100** · 200 · 400 /sn |
+| Kalıcı CPU | `cpu_high_pct` | %60 · 70 · 75 · 80 · **85** · 90 · 95 |
+| | `cpu_min_fraction` | 0,5 · 0,6 · 0,7 · **0,8** · 0,9 · 1,0 |
+| Disk G/Ç | `disk_ratio` | 1,5 · 2 · **3** · 4 · 6 × |
+| | `disk_min_throughput_mib_s` | 1 · 2 · **5** · 10 · 20 · 50 MiB/sn |
+| | `disk_busy_pct` | %50 · 60 · 70 · **80** · 90 · 95 |
+
+### Sentetik senaryolarla doğrulama
+
+Karşı-örnek senaryolar "olağan", pozitif senaryolar "yoğun" kayıt olarak verildiğinde
+(`docs/KALIBRASYON_SENTETIK.md`, tek komutla yeniden üretilir):
+
+```bash
+python3 scripts/kalibrasyon.py scenarios/cpu_spikes.json scenarios/memory_low_quiet.json \
+  scenarios/disk_steady.json --yogun scenarios/cpu.json:sustained_cpu \
+  --yogun scenarios/memory.json:memory_pressure --yogun scenarios/disk.json:disk_io_anomaly \
+  --cikti docs/KALIBRASYON_SENTETIK.md
+```
+
+Sonuç: Varsayılan eşiklerin hiçbiri karşı-örneklerde uyarı üretmiyor ve üç yoğun senaryonun
+hepsini yakalıyor. Değişiklik önerilmiyor. Pay: bellek uyarı eşiğinde 3, swap ve major fault
+eşiklerinde 2, CPU eşiğinde 4, CPU oranında 3, disk katsayısı ve alt sınırında 2, disk
+meşguliyetinde 3 adım daha duyarlı değerde de yanlış pozitif yok. CPU eşiği %95'e çıkarılırsa
+`cpu` senaryosu (%95 civarı yük) artık yakalanmıyor. Bu, eşiğin yükseltilmesine karşı bir
+sınırdır.
+
+> **Durum:** Gerçek Pardus 25.1 XFCE kullanım verisiyle kalibrasyon için temiz bir VM'de 30 dk
+> olağan kullanım gerekir. Bu adım yukarıdaki tek komutla yapılır ve sonuç tablosu bu
+> bölüme eklenir. Sentetik sonuçlar yalnızca yöntemi ve varsayılanların iç tutarlılığını
+> gösterir; gerçek kullanımın yerini tutmaz.

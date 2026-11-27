@@ -3,10 +3,11 @@ from dataclasses import replace
 
 import pytest
 
-from conftest import build_series
+from conftest import T0, build_series
 from pardusinsight.analysis.engine import RuleEngine, replay
 from pardusinsight.analysis.explain import alert_to_html, alert_to_text
 from pardusinsight.analysis.rules import Rule, RuleOutcome, SustainedCpuRule
+from pardusinsight.config import AnalysisSettings
 
 
 def cpu_profile(high_from: float, high_to: float):
@@ -125,3 +126,149 @@ def test_settings_validation_rejects_inconsistent_thresholds():
     with pytest.raises(ValueError):
         AnalysisSettings(window_s=2.0).validate()
     assert replace(AnalysisSettings(), cpu_high_pct=70.0).validate().cpu_high_pct == 70.0
+
+
+# ----------------------------------------------------------------------------- yetersiz veri
+def test_pause_in_sampling_does_not_resolve_and_reopen_alert():
+    # Örnekleme 20 sn duraklıyor (ör. kullanıcı "Duraklat"a bastı); yük hiç kesilmiyor
+    samples = [s for s in build_series(200, lambda i, t: dict(cpu_percent=96.0))
+               if not 100 < s.timestamp - T0 <= 120]
+    engine = RuleEngine()
+    updates = run(engine, samples)
+    assert sum(len(u.new) for u in updates) == 1
+    assert sum(len(u.resolved) for u in updates) == 0
+    assert [a.rule_id for a in engine.active_alerts()] == ["sustained_cpu"]
+
+
+def test_prolonged_missing_data_resolves_alert_after_hold():
+    samples = build_series(300, lambda i, t: dict(cpu_percent=96.0 if t < 200 else None))
+    engine = RuleEngine()
+    statuses = []
+    for k in range(1, len(samples) + 1):
+        update = engine.evaluate(samples[:k])
+        cpu = next(s for s in update.statuses if s.rule_id == "sustained_cpu")
+        statuses.append((samples[k - 1].timestamp, cpu.reason))
+    (alert,) = engine.alert_log()
+    assert not alert.active
+    # Uyarı açıldıktan sonra verinin yetersiz kalmaya başladığı ilk an
+    unknown_from = next(t for t, reason in statuses
+                        if t > alert.last_seen and reason.startswith("Yetersiz veri"))
+    hold = engine.settings.evaluation_span_s + engine.settings.resolve_grace_s
+    assert hold <= alert.resolved_at - unknown_from <= hold + engine.settings.sample_interval_s
+
+
+def test_rule_error_does_not_close_active_alert_immediately():
+    class FlakyCpu(SustainedCpuRule):
+        calls = 0
+
+        def evaluate(self, samples, settings):
+            FlakyCpu.calls += 1
+            if 40 <= FlakyCpu.calls < 45:
+                raise RuntimeError("geçici hata")
+            return super().evaluate(samples, settings)
+
+    engine = RuleEngine(rules=[FlakyCpu()])
+    updates = run(engine, build_series(80, lambda i, t: dict(cpu_percent=97.0)))
+    assert any(u.errors for u in updates)
+    assert sum(len(u.resolved) for u in updates) == 0
+    assert len(engine.alert_log()) == 1 and engine.alert_log()[0].active
+
+
+# ----------------------------------------------------------------------------- önem ve aralık
+def test_severity_follows_current_evidence():
+    def profile(i, t):
+        if t < 120:  # ağır baskı: kritik
+            return dict(mem_available_percent=3.0, swap_in_pages_per_s=400.0,
+                        swap_out_pages_per_s=400.0, major_faults_per_s=500.0,
+                        psi_memory_some=30.0)
+        return dict(mem_available_percent=8.0, major_faults_per_s=150.0)  # hafiflemiş: uyarı
+
+    engine = RuleEngine()
+    updates = run(engine, build_series(150, profile))
+    severities = [a.severity for u in updates for a in u.active]
+    assert "critical" in severities
+    (alert,) = engine.active_alerts()
+    assert alert.severity == "warning" and alert.confidence == "orta"
+
+
+def test_recording_at_other_interval_is_analyzed_with_observed_interval():
+    # 2 sn aralıklı kayıt, 1 sn ayarıyla açılıyor (ör. GUI'de aralık değiştirildikten sonra)
+    samples = build_series(60, lambda i, t: dict(cpu_percent=97.0))
+    settings = AnalysisSettings(sample_interval_s=1.0)
+    assert [a.rule_id for a in replay(samples, settings).alert_log()] == ["sustained_cpu"]
+    engine = RuleEngine(settings)
+    assert engine.effective_settings(samples).sample_interval_s == 2.0
+
+
+def test_effective_interval_ignores_single_gap():
+    samples = [s for s in build_series(100) if not 60 < s.timestamp - T0 <= 90]
+    assert RuleEngine().effective_settings(samples).sample_interval_s == 2.0
+
+
+# ----------------------------------------------------------------------------- yaşam döngüsü ayrıntıları
+def _feed(engine, samples):
+    keep = engine.settings.lookback_s + engine.settings.window_s
+    buffer = []
+    for sample in samples:
+        buffer = [s for s in buffer if s.timestamp >= sample.timestamp - keep] + [sample]
+        engine.evaluate(buffer)
+
+
+def test_resolution_happens_exactly_after_grace():
+    samples = build_series(150, cpu_profile(60, 200))
+    engine = RuleEngine()
+    run(engine, samples)
+    (alert,) = engine.alert_log()
+    assert alert.resolved_at - alert.last_seen == engine.settings.resolve_grace_s
+
+
+def test_window_start_keeps_episode_start_across_updates():
+    samples = build_series(100, lambda i, t: dict(cpu_percent=97.0))
+    engine = RuleEngine()
+    run(engine, samples)
+    (alert,) = engine.active_alerts()
+    assert alert.window_start == alert.first_seen - engine.settings.evaluation_span_s
+    assert alert.window_end == samples[-1].timestamp > alert.first_seen
+
+
+def test_log_bound_never_drops_the_active_alert():
+    engine = RuleEngine(max_log=2)
+    # 5 dk yük / 5 dk boşta döngüsü; son 4 dk'da yük sürüyor (aktif uyarı)
+    samples = build_series(1320, lambda i, t: dict(
+        cpu_percent=96.0 if (t // 300) % 2 == 0 or t >= 2400 else 5.0))
+    _feed(engine, samples)
+    log = engine.alert_log()
+    assert len(log) <= 2
+    assert [a.alert_id for a in engine.active_alerts()] == [log[-1].alert_id]
+    assert int(log[-1].alert_id.split("-")[-1]) >= 4  # önceki uyarılar açılıp kapandı
+
+
+def test_log_bound_keeps_every_active_alert():
+    from pardusinsight.analysis.rules import AlertDraft
+
+    def draft(title, samples):
+        ts = samples[-1].timestamp
+        return AlertDraft(title, "warning", "orta", "", ts - 1, ts, (), (), "", ())
+
+    class Always(Rule):
+        rule_id = "hep"
+        title = "Hep"
+
+        def evaluate(self, samples, settings):
+            return RuleOutcome(True, "ok", draft(self.title, samples))
+
+    class Later(Rule):
+        rule_id = "sonra"
+        title = "Sonra"
+
+        def evaluate(self, samples, settings):
+            on = len(samples) > 3
+            return RuleOutcome(on, "ok" if on else "yok", draft(self.title, samples) if on else None)
+
+    engine = RuleEngine(rules=[Always(), Later()], max_log=1)
+    samples = build_series(10)
+    for k in range(1, len(samples) + 1):
+        engine.evaluate(samples[:k])
+    logged = {a.alert_id for a in engine.alert_log()}
+    # Sınır aşılsa bile aktif uyarılar günlükten (arayüz ve rapordan) düşmez
+    assert {a.alert_id for a in engine.active_alerts()} == logged == {"hep-1", "sonra-2"}

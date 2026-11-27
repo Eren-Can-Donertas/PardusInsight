@@ -11,8 +11,9 @@ oluşturmaz.
 """
 from __future__ import annotations
 
+import math
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..core.models import (CpuTimes, DiskCounters, MemoryInfo, PressureInfo,
@@ -150,6 +151,9 @@ class SyntheticSource:
         self.swap_total = swap_total
         self.noise = noise
         self._rng = random.Random(seed)
+        # Süreç listesi ayrı üreteç kullanır: süreç listesinin kaç örnekte bir toplandığı
+        # (process_every) veya hiç toplanmaması sistem metriklerini değiştirmesin.
+        self._proc_rng = random.Random(seed * 7919 + 1)
         self._start = start_time
         self._elapsed = -step_s  # ilk collect() t=0 üretir
         self._cpu = [0.0] * 8
@@ -168,10 +172,34 @@ class SyntheticSource:
                 return phase
         return self.phases[-1]
 
-    def _jitter(self, value: float, rel: float = 0.08, abs_: float = 0.0) -> float:
+    def _jitter(self, value: float, rel: float = 0.08, abs_: float = 0.0,
+                rng: Optional[random.Random] = None) -> float:
         if not self.noise:
             return value
-        return value + self._rng.gauss(0.0, abs(value) * rel + abs_)
+        return value + (rng or self._rng).gauss(0.0, abs(value) * rel + abs_)
+
+    def mixed_phase(self, start: float, end: float) -> Phase:
+        """(start, end] aralığıyla örtüşen evrelerin süreye göre ağırlıklı ortalaması.
+
+        Gerçek sayaçlar aralık boyunca birikir; yalnızca aralığın sonundaki evreyi
+        kullanmak kaba aralıklarda (ör. 30 sn) kısa sıçramaları tüm aralığa yayardı.
+        Etiket (ad, "hot") en uzun süre örtüşen evreden alınır.
+        """
+        if end <= start:
+            return self.phase_at(end)
+        n = max(1, int(math.ceil((end - start) / 0.5)))
+        h = (end - start) / n
+        picks = [self.phase_at(start + (k + 0.5) * h) for k in range(n)]
+        if all(ph is picks[0] for ph in picks):
+            return picks[0]
+        counts: Dict[int, int] = {}
+        for ph in picks:
+            counts[id(ph)] = counts.get(id(ph), 0) + 1
+        dominant = max(reversed(picks), key=lambda ph: counts[id(ph)])
+        numeric = {f.name: sum(getattr(ph, f.name) for ph in picks) / n
+                   for f in fields(Phase)
+                   if f.type in ("float", float) and f.name != "duration_s"}
+        return replace(dominant, **numeric)
 
     @property
     def now(self) -> float:
@@ -185,7 +213,7 @@ class SyntheticSource:
     def collect(self) -> RawSnapshot:
         self._elapsed += self.step_s
         dt = self.step_s if self._elapsed > 0 else 0.0
-        phase = self.phase_at(self._elapsed)
+        phase = self.mixed_phase(self._elapsed - dt, self._elapsed)
         self.current_phase = phase
         ncpu = self.cpu_count
 
@@ -258,7 +286,7 @@ class SyntheticSource:
                 rss = int(self.mem_total * 0.55)
             rows.append(ProcessInfo(
                 pid=pid, name=name, username=user, status="sleeping",
-                cpu_percent=round(max(self._jitter(cpu, 0.2), 0.0), 2),
+                cpu_percent=round(max(self._jitter(cpu, 0.2, rng=self._proc_rng), 0.0), 2),
                 rss_bytes=rss, memory_percent=round(rss / self.mem_total * 100.0, 2),
                 num_threads=4,
                 read_bytes_per_s=None if user == "root" else 0.0,
@@ -268,7 +296,8 @@ class SyntheticSource:
             for i in range(3):
                 rows.append(ProcessInfo(
                     pid=4100 + i, name="cc1plus", username="ogrenci", status="running",
-                    cpu_percent=round(self._jitter(28.0, 0.05), 2), rss_bytes=350 * MIB,
+                    cpu_percent=round(self._jitter(28.0, 0.05, rng=self._proc_rng), 2),
+                    rss_bytes=350 * MIB,
                     memory_percent=round(350 * MIB / self.mem_total * 100.0, 2),
                     num_threads=1, read_bytes_per_s=0.0, write_bytes_per_s=20_000.0))
         if phase.hot == "io":
