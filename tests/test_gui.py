@@ -204,3 +204,13 @@ def test_gui_smoke_open_sample_and_close_cleanly(qapp):
     assert win.methodology_view.toPlainText().startswith("Metodoloji")
     win.close()
     assert not win.sampler_thread.isRunning()
+
+
+def test_settings_dialog_keeps_values_outside_old_ranges(qapp):
+    """Komut satırıyla verilen 0,2 sn aralık ve process_every=20 kutuda kırpılmamalı."""
+    from dataclasses import replace
+
+    start = replace(AppSettings().with_interval(0.2), process_every=20).validate()
+    settings = SettingsDialog(start).build_settings()
+    assert settings.sample_interval_s == 0.2 and settings.process_every == 20
+    assert settings.analysis == start.analysis

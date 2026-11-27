@@ -81,9 +81,16 @@ class MonitorService:
         origin = self.recording_source if self.replay_mode else self.source_name
         return bool(origin) and str(origin).startswith("synthetic")
 
-    def apply_settings(self, settings: AppSettings) -> None:
-        """Örnekleme aralığı ve analiz eşiklerini değiştirir (geçmiş korunur)."""
+    def apply_settings(self, settings: AppSettings) -> Optional[TickResult]:
+        """Örnekleme aralığı ve analiz eşiklerini değiştirir (geçmiş korunur).
+
+        Kayıt analizi modunda kurallar yüklenmiş kayıt üzerinde yeni eşiklerle baştan
+        çalıştırılır ve güncel sonuç döndürülür (aksi hâlde eşik değişikliği etkisiz kalırdı).
+        """
         settings.validate()
+        if self.replay_mode:
+            self.settings = settings
+            return self.load_recording(self.history.snapshot(), self.recording_source)
         new_history = self._new_history(settings)
         if (new_history.capacity != self.history.capacity
                 or new_history.max_age_s != self.history.max_age_s):
@@ -93,6 +100,7 @@ class MonitorService:
             setattr(self.source, "step_s", settings.sample_interval_s)  # noqa: B010
         self.settings = settings
         self.engine.update_settings(settings.analysis)
+        return None
 
     def tick(self) -> TickResult:
         started = time.perf_counter()
@@ -154,8 +162,11 @@ class MonitorService:
         ordered = sorted(samples, key=lambda s: s.timestamp)
         engine = replay(ordered, self.settings.analysis)
         span = ordered[-1].timestamp - ordered[0].timestamp if ordered else 0.0
-        minutes = max(self.settings.history_minutes, span / 60.0 + 1.0)
-        self.history = HistoryBuffer(max_age_s=minutes * 60.0, min_interval_s=1.0)
+        max_age = max(self.settings.history_minutes, span / 60.0 + 1.0) * 60.0
+        # Kapasite kaydın tamamını alacak kadar olmalı: 1 sn'den kısa aralıklı kayıtlar
+        # sabit 1 sn varsayımıyla kesiliyordu.
+        min_interval = min(1.0, max_age / (len(ordered) + 1)) if ordered else 1.0
+        self.history = HistoryBuffer(max_age_s=max_age, min_interval_s=min_interval)
         self.history.extend(ordered)
         self.engine = engine
         self.normalizer.reset()

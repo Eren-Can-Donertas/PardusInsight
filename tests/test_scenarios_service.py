@@ -223,3 +223,30 @@ def test_process_collection_does_not_change_system_metrics():
     reference = cpu_series(1)
     assert cpu_series(3) == reference
     assert cpu_series(1, with_processes=False) == reference
+
+
+def test_subsecond_recording_is_loaded_completely():
+    """0,5 sn aralıklı 40 dk'lık kayıt kesilmeden yüklenmeli.
+
+    Eskiden kapasite 1 sn aralık varsayımıyla hesaplanıyor ve kayıt kesiliyordu.
+    """
+    settings = replace(AppSettings().with_interval(0.5), history_minutes=40)
+    recorder = MonitorService(SyntheticSource("normal", step_s=0.5), None, settings)
+    for _ in range(4800):
+        recorder.tick()
+    recorded = recorder.history.snapshot()
+    service = build_synthetic_service("normal", loop=True)
+    result = service.load_recording(recorded, "synthetic:normal")
+    assert result.history_len == len(recorded) == 4800
+
+
+def test_threshold_change_reanalyzes_loaded_recording():
+    recorded = run_scenario("cpu").history.snapshot()
+    service = build_synthetic_service("normal", loop=True)
+    service.load_recording(recorded, "synthetic:cpu")
+    assert [a.rule_id for a in service.engine.alert_log()] == ["sustained_cpu"]
+    stricter = replace(service.settings, analysis=replace(service.settings.analysis,
+                                                          cpu_high_pct=99.0))
+    result = service.apply_settings(stricter)
+    assert result is not None and result.alert_log == ()
+    assert service.replay_mode and service.recording_source == "synthetic:cpu"
