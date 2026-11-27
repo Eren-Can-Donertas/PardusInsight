@@ -34,3 +34,22 @@ markers = [
     "linux: gerçek Linux /proc gerektirir",
     "gui: PySide6 gerektirir (QT_QPA_PLATFORM=offscreen ile başsız çalışır)",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+# Hata sınıfları: pycodestyle (E/W), pyflakes (F), bugbear (B).
+# pyupgrade (UP) bilerek seçilmedi: Python 3.9 uyumluluğu için Optional/List yazımı korunur.
+select = ["E", "F", "W", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Qt'nin rowCount(parent=QModelIndex()) imzası; QModelIndex değişmez bir değer nesnesidir.
+"pardusinsight/ui/process_model.py" = ["B008"]
+
+[tool.mypy]
+# Kod Python 3.9+ ile uyumludur; mypy 2.x en az 3.10 sözdizimiyle denetler.
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_ignores = true

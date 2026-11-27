@@ -10,3 +10,7 @@ dist/
 pardusinsight_*.csv
 pardusinsight_*.json
 .pardusinsight-*.tmp
+# Pardus doğrulama çıktıları ve araç önbellekleri (yeniden üretilebilir)
+pardus_dogrulama_*/
+.mypy_cache/
+.ruff_cache/
