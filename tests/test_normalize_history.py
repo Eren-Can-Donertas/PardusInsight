@@ -137,3 +137,14 @@ def test_concurrent_append_and_snapshot_is_safe():
     for t in threads:
         t.join()
     assert not errors
+
+
+def test_minor_faults_and_cumulative_disk_bytes():
+    n = Normalizer()
+    first = n.update(raw(0.0, vm=(0, 0, 100, 1000), disk=(5000, 7000, 0)))
+    # Kümülatif baytlar fark gerektirmez; hızlar ise ilk örnekte bilinmez
+    assert (first.disk_read_bytes_total, first.disk_write_bytes_total) == (5000, 7000)
+    assert first.minor_faults_per_s is None
+    second = n.update(raw(2.0, vm=(0, 0, 300, 3000), disk=(9000, 7000, 0)))
+    assert second.major_faults_per_s == 100.0
+    assert second.minor_faults_per_s == 900.0  # (2000 toplam - 200 major) / 2 sn

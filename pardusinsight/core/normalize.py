@@ -59,7 +59,8 @@ class Normalizer:
         }
 
         # CPU yüzdeleri (psutil ile aynı tanım: meşgul = toplam - idle - iowait)
-        if has_delta and raw.cpu_times is not None and prev.cpu_times is not None:
+        if prev is not None and has_delta and raw.cpu_times is not None \
+                and prev.cpu_times is not None:
             cur_t, prev_t = raw.cpu_times, prev.cpu_times
             deltas = {name: getattr(cur_t, name) - getattr(prev_t, name)
                       for name in ("user", "nice", "system", "idle", "iowait",
@@ -92,14 +93,23 @@ class Normalizer:
                                            if mem.swap_total > 0 else 0.0)
 
         # Swap ve sayfa hatası hızları
-        if has_delta and raw.vm is not None and prev.vm is not None:
+        if prev is not None and has_delta and raw.vm is not None and prev.vm is not None:
             values["swap_in_pages_per_s"] = _round(_rate(raw.vm.pswpin, prev.vm.pswpin, dt))
             values["swap_out_pages_per_s"] = _round(_rate(raw.vm.pswpout, prev.vm.pswpout, dt))
             values["major_faults_per_s"] = _round(
                 _rate(raw.vm.pgmajfault, prev.vm.pgmajfault, dt))
+            all_faults = _rate(raw.vm.pgfault, prev.vm.pgfault, dt)
+            major = _rate(raw.vm.pgmajfault, prev.vm.pgmajfault, dt)
+            if all_faults is not None and major is not None:
+                # pgfault tüm hataları sayar; minor = toplam - major
+                values["minor_faults_per_s"] = _round(max(all_faults - major, 0.0))
 
-        # Disk G/Ç
-        if has_delta and raw.disks is not None and prev.disks is not None:
+        # Disk G/Ç: kümülatif baytlar ilk örnekte de bilinir, hızlar fark gerektirir
+        if raw.disks:
+            values["disk_read_bytes_total"] = sum(d.read_bytes for d in raw.disks.values())
+            values["disk_write_bytes_total"] = sum(d.write_bytes for d in raw.disks.values())
+        if prev is not None and has_delta and raw.disks is not None \
+                and prev.disks is not None:
             disk = _disk_rates(raw.disks, prev.disks, dt)
             if disk is not None:
                 values.update(disk)

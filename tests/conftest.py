@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 import sys
 from collections import namedtuple
-from dataclasses import replace
 from typing import Callable, Dict, List, Optional
 
 import pytest
@@ -24,8 +23,13 @@ try:
 except ImportError:  # pragma: no cover
     HAS_PSUTIL = False
 
-linux_only = pytest.mark.skipif(not (IS_LINUX and HAS_PSUTIL),
-                                reason="gerçek Linux /proc ve psutil gerekir")
+_skip_without_linux = pytest.mark.skipif(not (IS_LINUX and HAS_PSUTIL),
+                                         reason="gerçek Linux /proc ve psutil gerekir")
+
+
+def linux_only(obj):
+    """Gerçek sistemi okuyan testleri işaretler: `pytest -m "not linux"` ile hariç tutulabilir."""
+    return pytest.mark.linux(_skip_without_linux(obj))
 
 BASE_FIELDS: Dict[str, object] = dict(
     interval_s=2.0, cpu_percent=15.0, cpu_user_percent=11.0, cpu_system_percent=4.0,

@@ -180,9 +180,12 @@ class SystemSample:
     swap_in_pages_per_s: Optional[float] = None
     swap_out_pages_per_s: Optional[float] = None
     major_faults_per_s: Optional[float] = None
+    minor_faults_per_s: Optional[float] = None  # pgfault - pgmajfault (diskten okuma gerektirmeyen)
     disk_read_bytes_per_s: Optional[float] = None
     disk_write_bytes_per_s: Optional[float] = None
     disk_busy_percent: Optional[float] = None
+    disk_read_bytes_total: Optional[int] = None  # açılıştan beri kümülatif (fiziksel diskler)
+    disk_write_bytes_total: Optional[int] = None
     psi_memory_some: Optional[float] = None
     psi_memory_full: Optional[float] = None
     psi_cpu_some: Optional[float] = None
@@ -215,11 +218,28 @@ SAMPLE_METRIC_FIELDS: Tuple[str, ...] = tuple(
     if f.name not in _PROCESS_LIST_FIELDS + ("errors",)
 )
 
+#: Her ölçüm alanının birimi (CSV/JSON raporlarında ve belgelerde kullanılır)
+SAMPLE_UNITS: Dict[str, str] = {
+    "timestamp": "unix_saniye", "interval_s": "saniye",
+    "cpu_percent": "yuzde", "cpu_user_percent": "yuzde", "cpu_system_percent": "yuzde",
+    "cpu_iowait_percent": "yuzde", "cpu_steal_percent": "yuzde", "cpu_count": "adet",
+    "load1": "yuk_ortalamasi", "mem_total_bytes": "bayt", "mem_available_bytes": "bayt",
+    "mem_available_percent": "yuzde", "mem_used_percent": "yuzde",
+    "swap_total_bytes": "bayt", "swap_used_bytes": "bayt", "swap_used_percent": "yuzde",
+    "swap_in_pages_per_s": "sayfa/saniye", "swap_out_pages_per_s": "sayfa/saniye",
+    "major_faults_per_s": "olay/saniye", "minor_faults_per_s": "olay/saniye",
+    "disk_read_bytes_per_s": "bayt/saniye", "disk_write_bytes_per_s": "bayt/saniye",
+    "disk_busy_percent": "yuzde", "disk_read_bytes_total": "bayt",
+    "disk_write_bytes_total": "bayt", "psi_memory_some": "yuzde", "psi_memory_full": "yuzde",
+    "psi_cpu_some": "yuzde", "psi_io_some": "yuzde", "procs_running": "adet",
+    "procs_blocked": "adet",
+}
+
 _INT_FIELDS = {
     f.name for f in fields(SystemSample)
     if f.name in ("cpu_count", "mem_total_bytes", "mem_available_bytes",
                   "swap_total_bytes", "swap_used_bytes", "procs_running",
-                  "procs_blocked")
+                  "procs_blocked", "disk_read_bytes_total", "disk_write_bytes_total")
 }
 
 

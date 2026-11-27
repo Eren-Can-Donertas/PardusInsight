@@ -65,7 +65,8 @@ def main() -> int:
         print(f"| {i} | {'evet' if mem.total == vm.total else 'HAYIR'} | {avail:.2f} | "
               f"{'evet' if mem.swap_total == sw.total else 'HAYIR'} | {swap:.2f} | {user:.2f} | "
               f"{sample.cpu_percent:.1f} | {cpu_ps:.1f} | {disk_diff:.2f} |")
-    print(f"\nEn büyük farklar: MemAvailable {worst['avail']:.2f} MiB, swap {worst['swap']:.2f} MiB, "
+    print(f"\nEn büyük farklar: MemAvailable {worst['avail']:.2f} MiB, "
+          f"swap {worst['swap']:.2f} MiB, "
           f"CPU user {worst['user']:.2f} sn, CPU % {worst['cpu']:.1f} puan, disk okuma "
           f"{worst['disk']:.2f} MiB.")
     print("Not: iki kaynak aynı anda okunamadığından anlık değişen değerlerde küçük farklar "
