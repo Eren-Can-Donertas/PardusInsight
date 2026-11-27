@@ -4,7 +4,7 @@
 > varsayımıyla hazırlandı. Debian 13 deposunda `python3-pyside6.qtwidgets` (6.8.2) ve
 > `python3-psutil` paketleri bulunur. **Adımlar henüz temiz bir Pardus 25.1 XFCE VM'de
 > denenmedi.** Paket adlarını `apt-cache policy <paket>` ile doğrulayın ve sonucu
-> [PARDUS_DOGRULAMA.md](PARDUS_DOGRULAMA.md) listesine işleyin.
+> [PARDUS_VALIDATION.md](../PARDUS_VALIDATION.md) listesine işleyin.
 
 PardusInsight'ın **çalışması** root gerektirmez. `sudo` yalnızca aşağıdaki seçenek A'da
 sistem paketlerini kurmak için gerekir; seçenek B tamamen kullanıcı yetkisiyle kurulur.

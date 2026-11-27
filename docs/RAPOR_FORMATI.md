@@ -22,12 +22,15 @@ UTF-8, virgülle ayrılmış, ondalık ayırıcı nokta. Boş hücre = ölçüle
 | `mem_available_percent`, `mem_used_percent` | % | |
 | `swap_total_bytes`, `swap_used_bytes`, `swap_used_percent` | bayt / % | |
 | `swap_in_pages_per_s`, `swap_out_pages_per_s` | sayfa/sn | `pswpin`, `pswpout` farkı |
-| `major_faults_per_s` | /sn | `pgmajfault` farkı |
+| `major_faults_per_s` | /sn | `pgmajfault` farkı (diskten okuma gerektiren sayfa hatası) |
+| `minor_faults_per_s` | /sn | (`pgfault` − `pgmajfault`) farkı |
 | `disk_read_bytes_per_s`, `disk_write_bytes_per_s` | bayt/sn | Fiziksel disklerin toplamı |
 | `disk_busy_percent` | % | En meşgul diskin io_ticks oranı |
+| `disk_read_bytes_total`, `disk_write_bytes_total` | bayt | Açılıştan beri kümülatif (ilk örnekte de bilinir) |
 | `psi_memory_some`, `psi_memory_full`, `psi_cpu_some`, `psi_io_some` | % | PSI avg10 (yoksa boş) |
 | `procs_running`, `procs_blocked` | adet | `/proc/stat` |
 | `errors` | metin | O örnekteki okuma hataları (` \| ` ile ayrılmış) |
+| `data_source` | metin | `linux` = gerçek ölçüm; `synthetic:<senaryo>` = **demo verisi**; `replay:<kaynak>` = yeniden analiz edilen kayıt |
 
 ## CSV – uyarılar (`<ad>_uyarilar.csv`)
 
@@ -44,7 +47,9 @@ uncertainty`. `evidence` sütunundaki öğeler ` ; ` ile ayrılır. Her öğe
   "schema_version": 1,
   "generator": {"name": "PardusInsight", "version": "0.1.0"},
   "created_at": "2026-11-23T14:05:00+0300",
-  "source": "linux | synthetic:<senaryo> | replay:<dosya>",
+  "source": "linux | synthetic:<senaryo> | replay:<kaynak>",
+  "is_synthetic": false,
+  "units": {"cpu_percent": "yuzde", "disk_read_bytes_per_s": "bayt/saniye", "...": "..."},
   "system": {"os": "...", "kernel": "...", "machine": "x86_64", "python": "3.13.x"},
   "settings": { "...AppSettings alanları...": 0, "analysis": { "...eşikler...": 0 } },
   "summary": {

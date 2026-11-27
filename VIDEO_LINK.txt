@@ -1,0 +1,5 @@
+VIDEO_LINK_PENDING
+
+Demo videosu henüz çekilmedi. Video YouTube'a yüklendikten sonra yukarıdaki satırı gerçek
+bağlantıyla değiştirin (ör. tek satır olarak tam URL) ve teslim ZIP'ini yeniden oluşturun:
+    python3 scripts/build_submission.py
