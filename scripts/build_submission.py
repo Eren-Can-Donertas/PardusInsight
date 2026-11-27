@@ -25,6 +25,7 @@ import re
 import subprocess  # yalnızca bu geliştirici betiğinde: `git ls-files` (uygulama kodunda yok)
 import sys
 import tempfile
+import time
 import zipfile
 from typing import Iterable, List, Set
 
@@ -88,7 +89,10 @@ def build(output: str) -> str:
         for rel in included:
             zf.write(os.path.join(ROOT, rel), f"source_code/{rel}")
         with open(os.path.join(ROOT, "README.md"), "r", encoding="utf-8") as handle:
-            zf.writestr("README.md", rewrite_readme(handle.read(), set(included)))
+            readme = zipfile.ZipInfo("README.md", date_time=time.localtime()[:6])
+            readme.external_attr = 0o644 << 16  # writestr varsayılanı 0600 olurdu
+            readme.compress_type = zipfile.ZIP_DEFLATED
+            zf.writestr(readme, rewrite_readme(handle.read(), set(included)))
         zf.write(os.path.join(ROOT, "technical_report.pdf"), "technical_report.pdf")
         zf.write(os.path.join(ROOT, "VIDEO_LINK.txt"), "VIDEO_LINK.txt")
     os.replace(tmp, output)
