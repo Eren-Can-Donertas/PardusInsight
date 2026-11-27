@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>PardusInsight — Teknik Rapor</title>
+<!--
+  Bu dosya technical_report.pdf'in kaynağıdır. Düzenledikten sonra PDF'i yeniden üretin:
+      sh report/build_pdf.sh
+  Harici kaynak (yazı tipi, betik) yüklenmez; çevrimdışı derlenir.
+-->
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 18mm 20mm 18mm;
+    @bottom-center { content: "PardusInsight — Teknik Rapor · " counter(page); font: 8.5pt "Noto Sans", sans-serif; color: #666; }
+  }
+  @page :first { @bottom-center { content: none; } }
+  html { font-family: "Noto Sans", "DejaVu Sans", "Liberation Sans", sans-serif; font-size: 10.2pt; line-height: 1.45; color: #1a1a1a; }
+  body { margin: 0; }
+  h1 { font-size: 21pt; margin: 0 0 4mm; line-height: 1.2; }
+  h2 { font-size: 13.5pt; margin: 7mm 0 2.5mm; padding-bottom: 1mm; border-bottom: 1.2pt solid #2a78d6; break-after: avoid; }
+  h3 { font-size: 11pt; margin: 4.5mm 0 1.5mm; break-after: avoid; }
+  p { margin: 0 0 2.2mm; text-align: justify; hyphens: auto; }
+  ul, ol { margin: 0 0 2.5mm; padding-left: 6mm; }
+  li { margin-bottom: 0.8mm; }
+  code, .mono { font-family: "Noto Sans Mono", "DejaVu Sans Mono", monospace; font-size: 8.8pt; }
+  pre { font-family: "Noto Sans Mono", "DejaVu Sans Mono", monospace; font-size: 8.3pt; background: #f4f5f7; border: 0.5pt solid #d8dbe0; padding: 2.5mm 3mm; white-space: pre-wrap; break-inside: avoid; margin: 0 0 3mm; }
+  table { border-collapse: collapse; width: 100%; margin: 1.5mm 0 3.5mm; font-size: 8.9pt; break-inside: auto; }
+  th, td { border: 0.5pt solid #c9ccd2; padding: 1.2mm 1.8mm; vertical-align: top; text-align: left; }
+  th { background: #eef2f8; font-weight: 600; }
+  tr { break-inside: avoid; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  .cover { height: 245mm; display: flex; flex-direction: column; justify-content: space-between; break-after: page; }
+  .cover .course { font-size: 10.5pt; letter-spacing: 0.08em; color: #2a78d6; font-weight: 600; }
+  .cover .subtitle { font-size: 13pt; color: #333; margin-bottom: 8mm; }
+  .cover table { width: 80%; font-size: 10pt; }
+  .cover .meta { font-size: 9.5pt; color: #444; }
+  .note { border-left: 3pt solid #fab219; background: #fff8e6; padding: 2mm 3mm; margin: 2mm 0 3.5mm; break-inside: avoid; }
+  .ok { color: #1b6e1b; font-weight: 600; }
+  .na { color: #a15c00; font-weight: 600; }
+  .fail { color: #b3261e; font-weight: 600; }
+  figure { margin: 2mm 0 4mm; break-inside: avoid; text-align: center; }
+  figure img { width: 100%; border: 0.5pt solid #c9ccd2; }
+  figcaption { font-size: 8.6pt; color: #444; margin-top: 1.2mm; }
+  .toc ol { columns: 2; column-gap: 10mm; font-size: 9.6pt; }
+  .small { font-size: 8.6pt; color: #444; }
+  .pagebreak { break-before: page; }
+  svg text { font-family: "Noto Sans", "DejaVu Sans", sans-serif; }
+</style>
+</head>
+<body>
+
+<!-- =============================== KAPAK =============================== -->
+<section class="cover">
+  <div>
+    <div class="course">BİL461 · İŞLETİM SİSTEMLERİ · 2026–2027 GÜZ · TOBB ETÜ</div>
+    <h1 style="margin-top:10mm">PardusInsight — Pardus için Salt-Okunur Sistem Kaynağı İzleme ve Açıklanabilir Darboğaz Analizi</h1>
+    <div class="subtitle">Aşama 2 · Teknik Rapor</div>
+    <table>
+      <tr><th>Grup üyesi</th><th>Öğrenci numarası</th></tr>
+      <tr><td>Eren Can Dönertaş</td><td>241101011</td></tr>
+      <tr><td>Yusuf Yankı Ütgün</td><td>231101020</td></tr>
+      <tr><td>Oğuz Giray Bori</td><td>231101076</td></tr>
+    </table>
+  </div>
+  <div class="meta">
+    <p><b>Hedef platform:</b> Pardus 25.1 XFCE (x86-64), standart kullanıcı yetkisi.</p>
+    <p><b>Kaynak kod:</b> https://github.com/Eren-Can-Donertas/PardusInsight · Sürüm 0.1.0</p>
+    <p><b>Rapor tarihi:</b> 27 Kasım 2026 · <b>Nihai teslim:</b> 7 Aralık 2026</p>
+    <p><b>Doğrulama durumu özeti:</b> Otomatik testler ve ölçümler Ubuntu 24.04 geliştirme makinesinde
+      yapılmıştır. <b>Pardus 25.1 XFCE üzerinde test henüz yapılmamıştır</b> (Bölüm 12). Bu raporda
+      ölçülmemiş hiçbir sonuç ölçülmüş gibi sunulmamıştır.</p>
+  </div>
+</section>
+
+<section class="toc">
+  <h2>İçindekiler</h2>
+  <ol>
+    <li>Proje başlığı ve grup bilgileri</li>
+    <li>Problem tanımı ve amaç</li>
+    <li>Hedef kullanıcılar</li>
+    <li>Kapsam ve özgün katkı</li>
+    <li>Teknik yaklaşım ve teknolojiler</li>
+    <li>Sistem mimarisi</li>
+    <li>Modüller ve veri akışı</li>
+    <li>Gerçekleştirim detayları</li>
+    <li>Açıklanabilir teşhis kuralları</li>
+    <li>Test metodolojisi</li>
+    <li>Gerçek test sonuçları</li>
+    <li>Pardus doğrulaması</li>
+    <li>Performans değerlendirmesi</li>
+    <li>Güvenlik ve salt-okunur çalışma</li>
+    <li>Grup üyelerinin katkıları</li>
+    <li>Bilinen kısıtlar ve geliştirme önerileri</li>
+    <li>Kaynakça</li>
+    <li>Yapay zekâ kullanım beyanı</li>
+  </ol>
+</section>
+
+<!-- =============================== 1 =============================== -->
+<h2>1. Proje başlığı ve grup bilgileri</h2>
+<p><b>PardusInsight</b>, Pardus kullanıcılarının sistem kaynaklarının durumunu yalnızca görmekle
+kalmayıp kaynak baskısının olası nedenlerini anlaşılır ve doğrulanabilir biçimde yorumlamasını
+hedefleyen, salt-okunur çalışan bir masaüstü uygulamasıdır. Grup üyeleri ve öğrenci numaraları
+kapakta verilmiştir. Aşama 1 önerisinde planlanan sorumluluklar Bölüm 15'te yer alır.</p>
+
+<!-- =============================== 2 =============================== -->
+<h2>2. Problem tanımı ve amaç</h2>
+<p>Bilgisayar yavaşladığında kullanıcılar genellikle anlık yüzdeler gösteren ayrı ayrı izleme
+araçlarına bakar. Oysa yüksek CPU kullanımı, bellek baskısı, artan swap etkinliği ve yoğun disk
+G/Ç'si farklı sorunlardır. Tek bir anlık değerden bunları ayırt etmek için işletim sistemi
+bilgisi gerekir. Aşama 1'deki somut senaryoda tarayıcı ve geliştirme ortamı açıkken bilgisayar
+yavaşlar. Kullanıcı kullanılabilir RAM, swap giriş/çıkışı, major page-fault ve süreç tüketimini
+birlikte görmek ister.</p>
+<p><b>Amaç:</b> Standart kullanıcı yetkisiyle Linux çekirdeğinin <code>/proc</code> arayüzünden
+seçilmiş sayaçları okumak, zaman pencereleri üzerinde birlikte değerlendirmek ve
+<i>olasılık dili</i> kullanan, hangi metriklerin hangi eşiklerle karşılaştırıldığını gösteren
+açıklamalı uyarılar üretmek. Uygulama hiçbir sistem ayarını değiştirmez, süreç sonlandırmaz
+ve ağ bağlantısı kurmaz.</p>
+
+<!-- =============================== 3 =============================== -->
+<h2>3. Hedef kullanıcılar</h2>
+<ul>
+  <li>Kendi bilgisayarındaki yavaşlamanın nedenini anlamak isteyen <b>öğrenciler ve bireysel Pardus kullanıcıları</b>,</li>
+  <li>Ortak bilgisayarlarda sorunları hızlıca sınıflandırması gereken <b>laboratuvar görevlileri</b>,</li>
+  <li>Kullanıcıdan rapor (CSV/JSON) alarak ilk incelemeyi yapan <b>başlangıç düzeyi teknik destek</b> personeli,</li>
+  <li><b>İşletim sistemleri dersini alan öğrenciler</b>: Metodoloji ekranı her metriğin çekirdekte hangi sayaçtan geldiğini gösterir.</li>
+</ul>
+
+<!-- =============================== 4 =============================== -->
+<h2>4. Projenin kapsamı ve özgün katkısı</h2>
+<h3>4.1 Gerçekleştirilen temel işlevler</h3>
+<table>
+  <tr><th>İşlev</th><th>Durum</th><th>Ana dosya</th></tr>
+  <tr><td>Canlı CPU (toplam, kullanıcı/çekirdek, iowait, steal), RAM, swap, swap giriş/çıkış, major/minor page-fault, disk okuma/yazma (hız ve kümülatif), PSI, süreç listesi</td><td class="ok">Çalışıyor</td><td><code>collectors/procfs.py</code>, <code>system.py</code>, <code>processes.py</code></td></tr>
+  <tr><td>2 sn varsayılan örnekleme, arka plan iş parçacığı</td><td class="ok">Çalışıyor</td><td><code>ui/worker.py</code></td></tr>
+  <tr><td>30 dakikayla sınırlı geçmiş tamponu</td><td class="ok">Çalışıyor</td><td><code>core/history.py</code></td></tr>
+  <tr><td>CPU/RAM/swap/disk geçmiş grafikleri, süreç tablosu, özet kartları</td><td class="ok">Çalışıyor</td><td><code>ui/charts.py</code>, <code>ui/main_window.py</code></td></tr>
+  <tr><td>Üç açıklanabilir, zaman pencereli kural</td><td class="ok">Çalışıyor</td><td><code>analysis/rules.py</code>, <code>engine.py</code></td></tr>
+  <tr><td>Uyarıda kanıt, eşik, zaman aralığı, güven, belirsizlik</td><td class="ok">Çalışıyor</td><td><code>analysis/explain.py</code>, <code>ui/alerts_view.py</code></td></tr>
+  <tr><td>CSV ve JSON raporu, kayıt yeniden analizi</td><td class="ok">Çalışıyor</td><td><code>export/</code></td></tr>
+  <tr><td>Sentetik demo modu (açık etiketli), GUI'siz komut satırı modu</td><td class="ok">Çalışıyor</td><td><code>collectors/synthetic.py</code>, <code>cli.py</code></td></tr>
+  <tr><td>Metodoloji ekranı (veri kaynakları ve geçerli eşikler)</td><td class="ok">Çalışıyor</td><td><code>analysis/methodology.py</code></td></tr>
+</table>
+<h3>4.2 Mevcut çözümlerden farkı</h3>
+<p><b>htop</b>, <b>xfce4-taskmanager</b> veya <b>GNOME Sistem İzleyicisi</b> anlık değerleri ve süreçleri gösterir. Yorumlama
+kullanıcıya kalır. PardusInsight'ın özgün katkısı bu araçların yerine geçmek değil, üstlerine
+<b>kural tabanlı bir teşhis katmanı</b> eklemektir:</p>
+<ul>
+  <li>Birbirini destekleyen metrikleri birlikte değerlendirir. Örneğin düşük MemAvailable değeri, ancak swap etkinliği, major page-fault ya da PSI ile desteklenirse bellek baskısı olasılığı sayılır.</li>
+  <li><b>Ardışık zaman pencereleri</b> kullanır, böylece tek bir sıçrama uyarı üretmez.</li>
+  <li>Her uyarıda ölçümleri, eşikleri, zaman aralığını, güven düzeyini ve <b>belirsizlikleri</b> gösterir. "Kesin tanı değildir" ifadesini açıkça kullanır.</li>
+  <li>Bir kuralın <b>neden tetiklenmediğini</b> de gösterir: "Kural durumu" tablosu.</li>
+  <li>Sonuçlar CSV/JSON olarak çevrimdışı dışa aktarılır ve sonradan yeniden analiz edilebilir.</li>
+</ul>
+<p>Mevcut araçların kodu kullanılmamıştır. psutil ve PySide6 yalnızca bağımlılık olarak kullanılır (Bölüm 17).</p>
+
+<!-- =============================== 5 =============================== -->
+<h2>5. Teknik yaklaşım ve kullanılan teknolojiler</h2>
+<table>
+  <tr><th>Bileşen</th><th>Sürüm (test edilen)</th><th>Lisans</th><th>Kullanım amacı</th></tr>
+  <tr><td>Python</td><td>3.12.3 (geliştirme); hedef ≥ 3.9, Pardus 25 ile 3.13 beklenir</td><td>PSF</td><td>Uygulama dili</td></tr>
+  <tr><td>Linux procfs, sysfs</td><td>Çekirdek 7.0 (geliştirme makinesi)</td><td>—</td><td>Birincil metrik kaynağı (salt-okunur)</td></tr>
+  <tr><td>psutil</td><td>7.2.2 ve 5.9.8</td><td>BSD-3-Clause</td><td>Süreç listesi; /proc okunamazsa yedek; çapraz doğrulama</td></tr>
+  <tr><td>PySide6 (QtCore/QtGui/QtWidgets)</td><td>6.12.0 ve 6.8.2.1 (Debian 13 sürümü)</td><td>LGPLv3</td><td>Masaüstü arayüzü</td></tr>
+  <tr><td>pytest</td><td>9.2.0 ve 8.3.5</td><td>MIT</td><td>Otomatik testler</td></tr>
+  <tr><td>ruff, mypy</td><td>0.15.17, 2.4.1</td><td>MIT</td><td>Statik denetim (yalnızca geliştirme)</td></tr>
+</table>
+<p><b>Temel teknik tercihler:</b></p>
+<ol>
+  <li>Metrikler, psutil'in hazır yüzdeleri yerine doğrudan <code>/proc</code> sayaçlarından fark alınarak hesaplanır. İşletim sistemleri dersinin içeriği bu hesaplamalarda görünür. psutil yedek ve doğrulama kaynağıdır.</li>
+  <li>Toplama, normalizasyon, tampon ve kurallar Qt'den bağımsız saf Python'dur. Bu katmanlar ekransız test edilebilir. PySide6 kurulamayan ortamlarda aynı analiz <code>--headless</code> ile komut satırında çalışır.</li>
+  <li>Grafikler QtCharts yerine QPainter ile çizilir. Böylece ek paket gerekmez ve uyarı aralıkları ile eşik çizgisi doğrudan gösterilebilir.</li>
+  <li>Stres testi yerine deterministik <b>sentetik senaryolar</b> kullanılır. Bu senaryolar gerçek kolektörle aynı kümülatif sayaç yapısını üretir.</li>
+</ol>
+
+<!-- =============================== 6 =============================== -->
+<h2>6. Sistem mimarisi</h2>
+<figure>
+<svg viewBox="0 0 760 430" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="PardusInsight katmanlı mimari şeması">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#444"/></marker>
+  </defs>
+  <!-- Katman 1 -->
+  <rect x="20" y="15" width="720" height="58" rx="6" fill="#eef2f8" stroke="#8aa4c8"/>
+  <text x="32" y="35" font-size="12" font-weight="700" fill="#1a1a1a">Katman 1 · Linux çekirdeği (yalnızca okuma)</text>
+  <text x="32" y="55" font-size="11" fill="#333">/proc/stat · meminfo · vmstat · diskstats · loadavg · pressure/{memory,cpu,io} · /sys/block · /proc/&lt;pid&gt;/* (psutil)</text>
+  <!-- worker çerçevesi -->
+  <rect x="12" y="88" width="736" height="214" rx="8" fill="none" stroke="#2a78d6" stroke-dasharray="6 4"/>
+  <text x="740" y="104" text-anchor="end" font-size="10.5" fill="#2a78d6" font-weight="700">SamplerWorker · QThread · QTimer 2 sn</text>
+  <!-- Katman 2 -->
+  <rect x="28" y="112" width="230" height="78" rx="6" fill="#ffffff" stroke="#8aa4c8"/>
+  <text x="40" y="131" font-size="12" font-weight="700">Katman 2 · collectors/</text>
+  <text x="40" y="149" font-size="10.5">LinuxSystemCollector: /proc (+ psutil)</text>
+  <text x="40" y="164" font-size="10.5">ProcessCollector: hata toleranslı</text>
+  <text x="40" y="179" font-size="10.5">SyntheticSource (demo, etiketli)</text>
+  <!-- Katman 3 -->
+  <rect x="278" y="112" width="210" height="78" rx="6" fill="#ffffff" stroke="#8aa4c8"/>
+  <text x="290" y="131" font-size="12" font-weight="700">Katman 3 · core/</text>
+  <text x="290" y="149" font-size="10.5">Normalizer: Δsayaç / Δsüre</text>
+  <text x="290" y="164" font-size="10.5">HistoryBuffer: ≤ 30 dk, sınırlı</text>
+  <text x="290" y="179" font-size="10.5">MonitorService.tick()</text>
+  <!-- Katman 4 -->
+  <rect x="508" y="112" width="222" height="78" rx="6" fill="#ffffff" stroke="#8aa4c8"/>
+  <text x="520" y="131" font-size="12" font-weight="700">Katman 4 · analysis/</text>
+  <text x="520" y="149" font-size="10.5">2 × 30 sn ardışık pencere</text>
+  <text x="520" y="164" font-size="10.5">3 kural → kanıt + belirsizlik</text>
+  <text x="520" y="179" font-size="10.5">RuleEngine: yeni / güncel / çözüldü</text>
+  <!-- oklar katman 1->2, 2->3, 3->4 -->
+  <line x1="143" y1="73" x2="143" y2="110" stroke="#444" stroke-width="1.4" marker-end="url(#arr)"/>
+  <line x1="258" y1="151" x2="276" y2="151" stroke="#444" stroke-width="1.4" marker-end="url(#arr)"/>
+  <text x="252" y="205" font-size="9.5" fill="#555">RawSnapshot</text>
+  <line x1="488" y1="151" x2="506" y2="151" stroke="#444" stroke-width="1.4" marker-end="url(#arr)"/>
+  <text x="474" y="205" font-size="9.5" fill="#555">SystemSample</text>
+  <!-- TickResult -->
+  <rect x="200" y="222" width="360" height="62" rx="6" fill="#fff8e6" stroke="#fab219"/>
+  <text x="212" y="242" font-size="11.5" font-weight="700">TickResult (değişmez veri nesnesi)</text>
+  <text x="212" y="259" font-size="10.5">örnek · süreç listesi · yeni/çözülen/aktif uyarılar ·</text>
+  <text x="212" y="274" font-size="10.5">kural durumları · hatalar · tur süresi</text>
+  <line x1="619" y1="190" x2="560" y2="240" stroke="#444" stroke-width="1.4" marker-end="url(#arr)"/>
+  <line x1="383" y1="190" x2="383" y2="220" stroke="#444" stroke-width="1.4" marker-end="url(#arr)"/>
+  <!-- GUI -->
+  <line x1="380" y1="284" x2="380" y2="324" stroke="#444" stroke-width="1.4" marker-end="url(#arr)"/>
+  <text x="390" y="318" font-size="9.5" fill="#555">Qt sinyali (kuyruklu)</text>
+  <rect x="20" y="326" width="470" height="88" rx="6" fill="#eef2f8" stroke="#8aa4c8"/>
+  <text x="32" y="346" font-size="12" font-weight="700">Katman 5 · ui/ (GUI iş parçacığı)</text>
+  <text x="32" y="364" font-size="10.5">Özet kartları · QPainter grafikleri (uyarı aralıkları, eşik)</text>
+  <text x="32" y="380" font-size="10.5">Süreç tablosu · Uyarılar + Kural durumu · Günlük · Metodoloji</text>
+  <text x="32" y="396" font-size="10.5">Demo/Sentetik veri şeridi · Ayarlar · Kayıt/senaryo aç</text>
+  <rect x="520" y="326" width="220" height="88" rx="6" fill="#ffffff" stroke="#8aa4c8"/>
+  <text x="532" y="346" font-size="12" font-weight="700">export/</text>
+  <text x="532" y="364" font-size="10.5">CSV (örnek + uyarı), JSON rapor</text>
+  <text x="532" y="380" font-size="10.5">Atomik yazım, geri okuma</text>
+  <text x="532" y="396" font-size="10.5">Yalnızca kullanıcı isteğiyle</text>
+  <line x1="490" y1="370" x2="518" y2="370" stroke="#444" stroke-width="1.4" marker-end="url(#arr)"/>
+</svg>
+<figcaption>Şekil 1. Katmanlı mimari. Kesikli mavi çerçeve içindeki işler arka plan iş parçacığında yürür. GUI yalnızca değişmez sonuç nesnelerini alır.</figcaption>
+</figure>
+<p>Mimari, Aşama 1 önerisindeki beş katmanı izler. <code>core/service.py</code> içindeki
+<code>MonitorService</code> Qt'den bağımsızdır. Aynı hattı GUI, komut satırı modu ve testler kullanır.
+Arka plan iş parçacığı ile GUI arasında paylaşılan tek değişken yapı <code>HistoryBuffer</code>'dır.
+Bu yapı bir kilitle korunur ve okuyana kopya döndürür.</p>
+
+<!-- =============================== 7 =============================== -->
+<h2>7. Modüller ve veri akışı</h2>
+<table>
+  <tr><th>Paket / modül</th><th>Sorumluluk</th></tr>
+  <tr><td><code>collectors/procfs.py</code></td><td>Saf ayrıştırıcılar: <code>/proc/stat</code> (USER_HZ → sn), <code>meminfo</code> (kB → bayt), <code>vmstat</code>, <code>diskstats</code> (sektör × 512), <code>loadavg</code>, <code>pressure/*</code>; <code>/sys/block</code> ile fiziksel disk seçimi</td></tr>
+  <tr><td><code>collectors/system.py</code></td><td>Bölüm bazında okuma. Başarısız bölüm için psutil yedeği. Hatalar <code>errors</code> alanına yazılır ve günlüğe kaydedilir</td></tr>
+  <tr><td><code>collectors/processes.py</code></td><td>Süreç taraması, CPU'nun çekirdek sayısına göre normalizasyonu, <code>(pid, create_time)</code> anahtarlı G/Ç hızı, uid → kullanıcı adı önbelleği</td></tr>
+  <tr><td><code>collectors/synthetic.py</code></td><td>Evre tabanlı 8 senaryo (normal, cpu, cpu_spikes, memory, memory_low_quiet, disk, disk_steady, demo)</td></tr>
+  <tr><td><code>core/models.py</code></td><td>Değişmez veri modelleri (RawSnapshot, SystemSample, Alert, Evidence…), birim sözlüğü</td></tr>
+  <tr><td><code>core/normalize.py</code>, <code>history.py</code>, <code>service.py</code></td><td>Fark tabanlı hızlar, sınırlı tampon, istisna fırlatmayan <code>tick()</code></td></tr>
+  <tr><td><code>analysis/</code></td><td>Pencere yardımcıları, 3 kural, kural motoru, açıklama ve metodoloji metinleri</td></tr>
+  <tr><td><code>export/</code></td><td>CSV/JSON yazma-okuma, atomik yazım</td></tr>
+  <tr><td><code>ui/</code></td><td>Ana pencere, worker, grafik, süreç modeli, uyarı paneli, ayarlar</td></tr>
+  <tr><td><code>cli.py</code></td><td>GUI / headless / sentetik / kayıt analizi girişleri, günlük düzeyi</td></tr>
+</table>
+<p><b>Bir örnekleme turunun akışı:</b></p>
+<ol>
+  <li>Worker'daki <code>QTimer</code> her 2 saniyede <code>MonitorService.tick()</code>'i çağırır.</li>
+  <li><code>LinuxSystemCollector.collect()</code> her bölümü ayrı ayrı okur ve kümülatif sayaçları <code>RawSnapshot</code> olarak döndürür (zaman: duvar saati + monotonik saat).</li>
+  <li><code>ProcessCollector</code> süreçleri tarar. Sonlanan ve izin verilmeyen süreçler sayılarak atlanır.</li>
+  <li><code>Normalizer</code> önceki ham ölçümle farkı alıp hız ve yüzdeleri hesaplar ve bir <code>SystemSample</code> üretir. İlk örnekte hızlar <code>None</code> olur.</li>
+  <li>Örnek <code>HistoryBuffer</code>'a eklenir. 30 dakikadan eski örnekler atılır.</li>
+  <li><code>RuleEngine</code> son 7 dakikalık veriyle üç kuralı değerlendirir. Uyarıları açar, günceller veya kapatır.</li>
+  <li>Sonuç değişmez bir <code>TickResult</code> nesnesi olarak Qt sinyaliyle GUI'ye iletilir. GUI kartları, görünen grafikleri, uyarı panelini ve durum çubuğunu günceller.</li>
+</ol>
+
+<!-- =============================== 8 =============================== -->
+<h2>8. Gerçekleştirim detayları</h2>
+<h3>8.1 Fark tabanlı ölçüm</h3>
+<p>CPU yüzdesi psutil ile aynı tanımla hesaplanır:
+<code>(Δtoplam − Δidle − Δiowait) / Δtoplam</code>. <code>guest</code> alanları çekirdekte zaten
+<code>user</code>'a dahil olduğu için toplama eklenmez. Swap giriş/çıkış, major/minor fault ve disk
+hızları <i>Δsayaç / Δsüre</i> olarak hesaplanır. Süre <code>time.monotonic()</code> farkıdır. İlk
+örnekte hız bilinmez ve "—" gösterilir. Bir sayaç azalırsa (sıfırlanma, taşma, CPU hotplug) negatif
+değer üretilmez, alan boş bırakılır.</p>
+<h3>8.2 Saat değişikliklerine dayanıklılık</h3>
+<p>Örnek zaman damgası <i>ilk duvar saati + (monotonik − ilk monotonik)</i> olarak üretilir.
+NTP veya elle yapılan saat değişikliği pencere sıralamasını bozmaz (test edildi).</p>
+<h3>8.3 Hata toleransı</h3>
+<ul>
+  <li>Her <code>/proc</code> bölümü bağımsız okunur. <code>OSError</code>, <code>PermissionError</code>
+  veya biçim hatası yalnızca o alanı boş bırakır ve psutil yedeği denenir.</li>
+  <li>Özellik algılama: PSI yoksa kanıt "ölçülemedi" olur. MemAvailable yoksa tahmini değer kullanılır ve bu işaretlenir.</li>
+  <li>Süreç taramasında <code>NoSuchProcess</code> ve <code>AccessDenied</code> sayılarak atlanır. PID yeniden kullanımında eski G/Ç sayacı uygulanmaz.</li>
+  <li><code>MonitorService.tick()</code> hiçbir koşulda istisna fırlatmaz. Kuralların hataları yalıtılır ve aynı hata günlüğe bir kez WARNING düzeyinde yazılır.</li>
+</ul>
+<h3>8.4 Karşılaşılan problemler ve çözümler</h3>
+<table>
+  <tr><th>Problem</th><th>Çözüm</th></tr>
+  <tr><td>Disk toplamında LVM/RAID ve bölümlerin çift sayılması</td><td>Yalnızca <code>/sys/block</code> altındaki fiziksel diskler. loop, dm-*, md*, zram, sr ve bölümler dışlandı</td></tr>
+  <tr><td>Disk kuralının, yükün yeni başladığı pencerede birkaç yüksek örnekle tetiklenmesi</td><td>Pencere ortalaması yerine <b>medyan</b> kullanıldı</td></tr>
+  <tr><td>Çözülmüş bellek uyarısında bağlamın, son örnekten alındığı için baskı sonrası değerleri göstermesi</td><td>Bağlam tüm dönem üzerinden toplanıyor (süreç başına en yüksek RSS)</td></tr>
+  <tr><td>GUI modunda CPU kullanımının %5 hedefinin sınırında olması (%5,04)</td><td>Profil, <code>QSortFilterProxyModel</code>'in 500 süreçte her turda ~6000 Python çağrısı yaptığını gösterdi. Sıralama model içinde tek <code>sorted()</code> çağrısına taşındı, gizli sekmeler güncellenmiyor. GUI turu 17–32 ms'den 3–9 ms'ye indi</td></tr>
+  <tr><td>Ayarlardan aralık 0,5 sn'ye düşürülünce tamponun 30 dk yerine 15 dk tutması</td><td>Kapasite aralık değişiminde yeniden hesaplanıyor (test eklendi)</td></tr>
+  <tr><td><code>MainWindow.thread</code> niteliğinin <code>QObject.thread()</code> metodunu gölgelemesi (mypy ile bulundu)</td><td><code>sampler_thread</code> olarak yeniden adlandırıldı</td></tr>
+  <tr><td>Sentetik verinin gerçek ölçümle karıştırılma riski</td><td>Sarı "DEMO / SENTETİK VERİ" şeridi, CSV'de <code>data_source</code> sütunu, JSON'da <code>is_synthetic</code>, komut satırında <code>[SENTETİK]</code> öneki</td></tr>
+</table>
+<h3>8.5 Arayüz</h3>
+<figure><img src="img/canli_genel_bakis.png" alt="Canlı genel bakış">
+<figcaption>Şekil 2. Genel Bakış, canlı izleme (gerçek /proc verisi, 60 sn). Ubuntu 24.04 geliştirme makinesinde, Qt offscreen render. <b>Pardus XFCE görüntüsü değildir.</b></figcaption></figure>
+<figure><img src="img/demo_uyarilar.png" alt="Demo uyarılar">
+<figcaption>Şekil 3. Uyarılar sekmesi: bellek baskısı uyarısının kanıt tablosu (ana koşul, destekleyici göstergeler, bağlam, eşikler ve pencereler). <b>Sentetik demo verisi</b>, üstteki sarı şerit bunu belirtir.</figcaption></figure>
+
+<!-- =============================== 9 =============================== -->
+<h2 class="pagebreak">9. Açıklanabilir teşhis kuralları</h2>
+<p><b>Ortak ilkeler:</b> Değerlendirme dönemi en yeni örnekten geriye doğru iki adet 30 saniyelik
+pencereye bölünür. Ana koşul <b>her pencerede ayrı ayrı</b> sağlanmalıdır. Pencerede beklenen
+örneklerin en az %60'ı geçerli değilse sonuç üretilmez ("Yetersiz veri"). Uyarı, koşul 10 saniye
+boyunca sağlanmazsa "çözüldü" olur. Her uyarıda şu ortak cümle yer alır: <i>"Bu bir olasılık
+değerlendirmesidir, kesin arıza tanısı değildir."</i> Eşikler Ayarlar ekranından veya JSON
+dosyasından değiştirilebilir.</p>
+<table>
+  <tr><th style="width:17%">Kural</th><th style="width:38%">Ana koşul (her pencerede)</th><th style="width:25%">Destek / bağlam</th><th style="width:20%">Önem / güven</th></tr>
+  <tr><td><b>Bellek baskısı olasılığı</b></td><td>MemAvailable medyanı <code>&lt; %10</code> (katı)</td><td><b>En az biri gerekli:</b> swap giriş+çıkış ≥ 100 sayfa/sn, major fault ≥ 100/sn, PSI bellek some ≥ %10. Bağlam: swap doluluğu, dönemdeki en yüksek RSS'li süreçler</td><td>Uyarı. Her pencerede &lt; %5 ve ≥ 2 destek varsa <i>Kritik olasılık</i>. Güven: 2+ destekte yüksek, aksi hâlde orta</td></tr>
+  <tr><td><b>Kalıcı CPU yoğunluğu</b></td><td>Örneklerin <code>≥ %80</code>'i CPU <code>≥ %85</code></td><td>Kullanıcı/çekirdek payı, steal, yük ortalaması. Tek süreç grubu yükün ≥ %50'sini oluşturuyorsa "süreç kaynaklı", aksi hâlde "dağılmış"</td><td>Uyarı. Güven: oran ≥ %95 ve ortalama ≥ eşik + 5 ise yüksek</td></tr>
+  <tr><td><b>Disk G/Ç anomalisi</b></td><td>Okuma+yazma medyanı <code>≥ max(3 × önceki 5 dk medyanı, 5 MiB/sn)</code> <b>veya</b> meşguliyet medyanı ≥ %80 (önceki dönemde düşükken)</td><td>iowait, G/Ç bekleyen süreç sayısı, PSI G/Ç, erişilebilen süreçlerin G/Ç hızları</td><td>Her zaman <i>Gözlem</i>. Güven: iki koşul birlikte sağlanırsa orta, aksi hâlde düşük</td></tr>
+</table>
+<p><b>Neden tek metrik yetmiyor?</b> Düşük MemAvailable değeri, bellek dolu olduğu hâlde sistemin
+sayfa takası yapmadığı sağlıklı bir durumu da gösterebilir (<code>memory_low_quiet</code> karşı-örneği).
+Ortalama CPU, kısa ve çok yüksek sıçramalardan etkilenir (<code>cpu_spikes</code>). Boş bir diskte
+0,1 → 1 MiB/sn "10 kat artış" anlamsızdır (mutlak alt sınır). NVMe'de %util doygunluğu
+abartabilir. Bu yüzden disk kuralı yalnızca gözlem üretir.</p>
+<figure><img src="img/karsi_ornek_cpu_spikes.png" alt="Karşı örnek">
+<figcaption>Şekil 4. Yanlış alarm karşı-örneği: <code>cpu_spikes</code> kaydında uyarı yoktur. Kural durumu tablosu nedenini açıklar ("eşik üstü oranlar %27, %20"). Sentetik veri.</figcaption></figure>
+
+<!-- =============================== 10 =============================== -->
+<h2>10. Test metodolojisi</h2>
+<ul>
+  <li><b>Birim testleri:</b> Ayrıştırıcılar örnek metinlerle ve sahte bir <code>/proc</code> ağacıyla test edilir. Normalizasyon elle hesaplanmış sayaçlarla, kurallar elle kurulmuş örnek dizileriyle doğrulanır. Testler gerçek sistemin o anki CPU/RAM değerlerine bağlı değildir.</li>
+  <li><b>Kural testleri:</b> Her kural için pozitif, negatif, <b>eşik sınırı</b> (eşik değerinin kendisi ve hemen yanı) ve yanlış alarm karşı-örneği testleri vardır.</li>
+  <li><b>Entegrasyon:</b> 8 sentetik senaryo, kaynak → normalizasyon → tampon → kural motoru hattından uçtan uca geçer. Senaryo başına beklenen uyarı kümesi doğrulanır.</li>
+  <li><b>Hata toleransı:</b> Sahte psutil ile kaybolan süreç, AccessDenied, yarıda kesilen tarama ve <code>PermissionError</code> durumları denenir. Gerçek sistemde de tarama sırasında sonlanan çocuk süreçlerle test edilir.</li>
+  <li><b>GUI:</b> <code>QT_QPA_PLATFORM=offscreen</code> ile açılış/kapanış, sekme güncellemeleri, dışa aktarma, kayıt açma, demo şeridi ve <b>donmama testi</b> çalıştırılır. Donmama testinde her ölçüm turu yapay olarak 300 ms sürerken GUI olay döngüsünün kalp atışı ölçülür.</li>
+  <li><b>Güvenlik:</b> Kaynak kodun AST taramasıyla yasak modül/çağrı denetimi, <code>open()</code> kip denetimi ve açık istek olmadan dosya yazılmadığının kontrolü yapılır.</li>
+  <li><b>Canlı doğrulama</b> (<code>-m linux</code>): /proc ile psutil, her biri 10 örnek olmak üzere karşılaştırılır.</li>
+  <li><b>Statik denetim:</b> ruff (E, F, W, B) ve mypy.</li>
+</ul>
+
+<!-- =============================== 11 =============================== -->
+<h2>11. Gerçek test sonuçları</h2>
+<div class="note">Ortam: Ubuntu 24.04.4 LTS, Linux 7.0.0-43-generic, x86-64, 16 mantıksal CPU, 15,3 GiB RAM, 4 GiB swap, PSI etkin.
+Tarih: 27 Kasım 2026. <b>Bu sonuçlar Pardus'a ait değildir.</b></div>
+<h3>11.1 Otomatik test koşuları</h3>
+<table>
+  <tr><th>Koşu</th><th>Ortam</th><th class="num">Geçti</th><th class="num">Başarısız</th><th class="num">Atlandı</th></tr>
+  <tr><td>Tam paket</td><td>Python 3.12.3, PySide6 6.12.0, psutil 7.2.2, pytest 9.2.0</td><td class="num ok">136</td><td class="num">0</td><td class="num">0</td></tr>
+  <tr><td>Debian 13 PySide6 sürümüyle uyumluluk</td><td>PySide6 6.8.2.1, psutil 5.9.8, pytest 8.3.5</td><td class="num ok">136</td><td class="num">0</td><td class="num">0</td></tr>
+  <tr><td>Bağımlılıksız Python</td><td>Sistem Python 3.12.3, psutil ve PySide6 yok</td><td class="num ok">121</td><td class="num">0</td><td class="num">7</td></tr>
+  <tr><td>Yalnız deterministik testler (<code>-m "not linux"</code>)</td><td>Tam paket ortamı</td><td class="num ok">130</td><td class="num">0</td><td class="num">6 seçilmedi</td></tr>
+  <tr><td>Statik denetim</td><td>ruff 0.15.17 (E, F, W, B) · mypy 2.4.1</td><td colspan="3" class="ok">ruff: sorun yok · mypy: 33 dosyada sorun yok</td></tr>
+</table>
+<table>
+  <tr><th>Test dosyası</th><th class="num">Test</th><th>Kapsam</th></tr>
+  <tr><td><code>test_procfs.py</code></td><td class="num">13</td><td>/proc ayrıştırıcıları, eski çekirdek biçimleri, disk filtresi, salt-okunur açma</td></tr>
+  <tr><td><code>test_collectors.py</code></td><td class="num">12</td><td>psutil yedeği, kaynaksız çalışma, NoSuchProcess, AccessDenied, PermissionError, PID yeniden kullanımı</td></tr>
+  <tr><td><code>test_normalize_history.py</code></td><td class="num">13</td><td>CPU/swap/disk/minor fault hesapları, sayaç sıfırlanması, saat geri alma, 30 dk sınırı, eşzamanlılık</td></tr>
+  <tr><td><code>test_rules.py</code></td><td class="num">30</td><td>3 kural: pozitif, negatif, eşik sınırı, karşı-örnek, süreç kaynağı</td></tr>
+  <tr><td><code>test_engine.py</code></td><td class="num">8</td><td>Yaşam döngüsü, dalgalanma koruması, hata yalıtımı, deterministik yeniden analiz</td></tr>
+  <tr><td><code>test_scenarios_service.py</code></td><td class="num">17</td><td>8 senaryo uçtan uca, hatalı kaynakta <code>tick()</code>, ayar değişikliği, tampon kapasitesi</td></tr>
+  <tr><td><code>test_export.py</code></td><td class="num">13</td><td>CSV/JSON gidiş-dönüş, geçersiz rapor, atomik yazım, gizlilik, veri kaynağı ve birimler</td></tr>
+  <tr><td><code>test_cli_safety.py</code></td><td class="num">12</td><td>Komut satırı modu, sentetik etiket, metodoloji, AST güvenlik taraması</td></tr>
+  <tr><td><code>test_gui.py</code></td><td class="num">9</td><td>Pencere güncelleme, dışa aktarma, kayıt açma, donmama, açılış/kapanış, demo şeridi</td></tr>
+  <tr><td><code>test_crosscheck_linux.py</code></td><td class="num">5</td><td>Canlı /proc ile psutil karşılaştırması (10'ar örnek)</td></tr>
+  <tr><td><code>test_formatting.py</code></td><td class="num">4</td><td>Türkçe biçimlendirme, sentetik sayaçlar</td></tr>
+  <tr><th>Toplam</th><th class="num">136</th><th></th></tr>
+</table>
+<h3>11.2 Uçtan uca senaryo sonuçları</h3>
+<table>
+  <tr><th>Senaryo</th><th>Süre (simülasyon)</th><th>Beklenen</th><th>Üretilen uyarı</th><th>Sonuç</th></tr>
+  <tr><td>demo</td><td>500 sn</td><td>CPU, bellek, disk</td><td>sustained_cpu, memory_pressure, disk_io_anomaly</td><td class="ok">PASS</td></tr>
+  <tr><td>cpu</td><td>420 sn</td><td>CPU</td><td>sustained_cpu</td><td class="ok">PASS</td></tr>
+  <tr><td>memory</td><td>420 sn</td><td>bellek</td><td>memory_pressure</td><td class="ok">PASS</td></tr>
+  <tr><td>disk</td><td>660 sn</td><td>disk</td><td>disk_io_anomaly</td><td class="ok">PASS</td></tr>
+  <tr><td>cpu_spikes (karşı-örnek)</td><td>~660 sn</td><td>yok</td><td>yok</td><td class="ok">PASS</td></tr>
+  <tr><td>memory_low_quiet (karşı-örnek)</td><td>360 sn</td><td>yok</td><td>yok</td><td class="ok">PASS</td></tr>
+  <tr><td>disk_steady (karşı-örnek)</td><td>900 sn</td><td>yok</td><td>yok</td><td class="ok">PASS</td></tr>
+  <tr><td>normal</td><td>1200 sn</td><td>yok</td><td>yok</td><td class="ok">PASS</td></tr>
+</table>
+<h3>11.3 /proc – psutil doğrulama tablosu (10 örnek)</h3>
+<p class="small"><code>scripts/validate_metrics.py --rounds 10 --interval 1</code>. Aşama 1 başarı ölçütü: "en az 10 örnek karşılaştırma".</p>
+<table>
+  <tr><th>#</th><th>MemTotal eşit</th><th class="num">MemAvailable farkı (MiB)</th><th>SwapTotal eşit</th><th class="num">Swap kullanılan farkı (MiB)</th><th class="num">CPU user farkı (sn)</th><th class="num">CPU % (/proc)</th><th class="num">CPU % (psutil)</th><th class="num">Disk okuma farkı (MiB)</th></tr>
+  <tr><td>1</td><td>evet</td><td class="num">0,00</td><td>evet</td><td class="num">0,00</td><td class="num">0,00</td><td class="num">9,4</td><td class="num">9,5</td><td class="num">0,00</td></tr>
+  <tr><td>2</td><td>evet</td><td class="num">0,00</td><td>evet</td><td class="num">0,00</td><td class="num">0,00</td><td class="num">7,5</td><td class="num">7,4</td><td class="num">0,00</td></tr>
+  <tr><td>3</td><td>evet</td><td class="num">0,00</td><td>evet</td><td class="num">0,00</td><td class="num">0,00</td><td class="num">5,0</td><td class="num">5,0</td><td class="num">0,00</td></tr>
+  <tr><td>4</td><td>evet</td><td class="num">0,00</td><td>evet</td><td class="num">0,00</td><td class="num">0,00</td><td class="num">5,3</td><td class="num">5,2</td><td class="num">0,00</td></tr>
+  <tr><td>5</td><td>evet</td><td class="num">0,00</td><td>evet</td><td class="num">0,00</td><td class="num">0,00</td><td class="num">6,9</td><td class="num">6,9</td><td class="num">0,00</td></tr>
+  <tr><td>6</td><td>evet</td><td class="num">0,00</td><td>evet</td><td class="num">0,00</td><td class="num">0,00</td><td class="num">8,1</td><td class="num">8,0</td><td class="num">0,00</td></tr>
+  <tr><td>7</td><td>evet</td><td class="num">0,00</td><td>evet</td><td class="num">0,00</td><td class="num">0,00</td><td class="num">3,3</td><td class="num">3,3</td><td class="num">0,00</td></tr>
+  <tr><td>8</td><td>evet</td><td class="num">0,00</td><td>evet</td><td class="num">0,00</td><td class="num">0,00</td><td class="num">4,8</td><td class="num">4,8</td><td class="num">0,00</td></tr>
+  <tr><td>9</td><td>evet</td><td class="num">0,00</td><td>evet</td><td class="num">0,00</td><td class="num">0,00</td><td class="num">7,5</td><td class="num">7,5</td><td class="num">0,00</td></tr>
+  <tr><td>10</td><td>evet</td><td class="num">0,00</td><td>evet</td><td class="num">0,00</td><td class="num">0,00</td><td class="num">9,9</td><td class="num">9,9</td><td class="num">0,00</td></tr>
+</table>
+<p>En büyük CPU % farkı 0,1 puandır. İki kaynak aynı anda okunamadığı için bu fark okuma anlarının kaymasından gelir. MemTotal ve SwapTotal her örnekte birebir eşittir.</p>
+
+<!-- =============================== 12 =============================== -->
+<h2>12. Pardus doğrulaması</h2>
+<div class="note"><b>Durum: TEST EDİLMEDİ (NOT TESTED).</b> Bu rapordaki hiçbir sonuç Pardus üzerinde
+elde edilmemiştir.</div>
+<p><b>Neden yapılamadı:</b> Geliştirme Ubuntu 24.04 çalışan bir makinede yapıldı. Bu makinede
+Pardus ISO'su, sanal makinesi veya imajı bulunmuyordu. Resmî Pardus 25 Docker imajı
+(<code>pardus/yirmibes</code>, Debian 13 tabanlı) ile kısmi bir kullanıcı alanı testi planlandı.
+Ancak imajı indirme işlemi, geliştirmede kullanılan yapay zekâ aracının otomatik izin denetimi
+tarafından reddedildi ve bu engel aşılmaya çalışılmadı. Konteyner testi yapılsaydı bile ana
+makinenin çekirdeğini kullandığı ve XFCE içermediği için XFCE VM testinin yerini tutmazdı.</p>
+<p><b>Pardus'a yakınlık için yapılanlar:</b> (1) Debian 13 deposundaki PySide6 sürümü (6.8.2) ile
+tüm testler geçti (Bölüm 11.1). (2) Kurulum komutları Debian 13 paket adlarına göre hazırlandı:
+<code>python3-psutil</code>, <code>python3-pyside6.qtwidgets</code>. Pardus 25 sürüm notlarındaki
+paket sürümleri <code>deb13</code> ekini taşır.</p>
+<p><b>Yapılması gerekenler:</b> <code>PARDUS_VALIDATION.md</code> belgesi temiz bir Pardus 25.1 XFCE
+VM için kurulum komutlarını ve 30 maddelik kabul listesini içerir. <code>scripts/pardus_validate.sh</code>
+betiği otomatik kısmı tek komutla çalıştırıp sonuçları bir klasöre yazar: ortam, paket sürümleri,
+pytest, 10 örnekli doğrulama, 60 sn canlı izleme, GUI'siz ve GUI'li 60 sn performans, ekran
+görüntüleri. Ekip bu sonuçları teslimden önce bu bölüme eklemelidir:</p>
+<table>
+  <tr><th>Pardus kontrolü</th><th>Sonuç</th></tr>
+  <tr><td>Temiz kurulum ve bağımlılıklar (apt)</td><td class="na">NOT TESTED — ekip dolduracak</td></tr>
+  <tr><td>Standart kullanıcıyla GUI açılışı, canlı metrikler, grafik güncellemesi</td><td class="na">NOT TESTED — ekip dolduracak</td></tr>
+  <tr><td>Kurallar, demo modu, dışa aktarma</td><td class="na">NOT TESTED — ekip dolduracak</td></tr>
+  <tr><td>60 sn yanıt verebilirlik, CPU &lt; %5, RAM &lt; 200 MiB</td><td class="na">NOT TESTED — ekip dolduracak</td></tr>
+  <tr><td>Temiz kapanış</td><td class="na">NOT TESTED — ekip dolduracak</td></tr>
+</table>
+
+<!-- =============================== 13 =============================== -->
+<h2>13. Performans değerlendirmesi</h2>
+<p><code>scripts/perf_check.py</code> ile canlı sistemde (~500 süreç), 2 sn örnekleme aralığıyla 60 saniye ölçüldü.
+CPU, sürecin kendi <code>os.times()</code> farkından, RSS ise <code>/proc/self/status</code> içindeki VmRSS'ten alındı.</p>
+<table>
+  <tr><th>Mod</th><th class="num">Ortalama CPU (tek çekirdek = %100)</th><th class="num">Toplam kapasiteye göre</th><th class="num">RSS (en yüksek)</th><th class="num">Tur süresi medyan / maks</th><th>GUI olay döngüsü</th></tr>
+  <tr><td>GUI'siz (<code>--headless</code>)</td><td class="num">%2,03</td><td class="num">%0,13</td><td class="num">19,6 MiB</td><td class="num">41,7 / 52,1 ms</td><td>—</td></tr>
+  <tr><td>GUI + arka plan worker (offscreen)</td><td class="num">%4,09</td><td class="num">%0,26</td><td class="num">82,1 MiB</td><td class="num">43,7 / 65,1 ms</td><td>En uzun aralık 29 ms; 2993 kalp atışından hiçbiri 100 ms'yi aşmadı</td></tr>
+</table>
+<table>
+  <tr><th>Aşama 1 hedefi</th><th>Geliştirme makinesinde</th><th>Pardus VM'de</th></tr>
+  <tr><td>Varsayılan örnekleme 2 sn</td><td class="ok">Sağlandı</td><td class="na">NOT TESTED</td></tr>
+  <tr><td>Geçmiş tamponu 30 dk ile sınırlı, sınırsız büyüme yok</td><td class="ok">Sağlandı (birim testi: 2000 örnek → 901). 60 sn'de RSS sabit</td><td class="na">NOT TESTED (35 dk koşu gerekli)</td></tr>
+  <tr><td>60 sn çalışmada GUI yanıt veriyor</td><td class="ok">Sağlandı</td><td class="na">NOT TESTED</td></tr>
+  <tr><td>Ortalama CPU &lt; %5</td><td class="ok">Sağlandı (%4,09, tek çekirdek ölçeği; sınıra yakın)</td><td class="na">NOT TESTED</td></tr>
+  <tr><td>RAM &lt; 200 MiB</td><td class="ok">Sağlandı (82 MiB)</td><td class="na">NOT TESTED</td></tr>
+</table>
+<p>GUI ölçümüne, ölçüm betiğinin kendi 50 Hz kalp atışı zamanlayıcısı da dahildir. CPU maliyetinin
+büyük kısmı süreç taramasıdır (~500 süreçte 40–60 ms/tur). Daha az sürecin çalıştığı bir VM'de
+daha düşük olması beklenir, ancak bu ölçülmedi. Gerekirse <i>Ayarlar → Süreç listesi sıklığı = 2</i>
+ayarı bu maliyeti yarıya indirir. Ölçümler offscreen render ile alındı. Gerçek XFCE
+oturumundaki çizim maliyeti Pardus'ta ölçülmelidir.</p>
+
+<!-- =============================== 14 =============================== -->
+<h2>14. Güvenlik ve salt-okunur çalışma</h2>
+<table>
+  <tr><th>İlke</th><th>Uygulama</th><th>Denetim</th></tr>
+  <tr><td>Root yetkisi istenmez</td><td>Hiçbir işlev root gerektirmez. Root ile başlatılırsa yalnızca bilgi uyarısı verilir</td><td><code>test_root_warning_is_informational</code></td></tr>
+  <tr><td>Sistem ayarı değiştirilmez, sistem dosyasına yazılmaz</td><td><code>/proc</code> ve <code>/sys</code> yalnızca <code>"r"</code> kipinde açılır</td><td>AST taraması + çalışma zamanında <code>open</code> kip izleme testi</td></tr>
+  <tr><td>Süreçlere sinyal gönderilmez</td><td>kill/terminate/suspend/nice/affinity çağrısı yoktur</td><td>AST taraması (<code>test_no_process_control_or_destructive_calls</code>)</td></tr>
+  <tr><td>Kabuk komutu çalıştırılmaz, ağ bağlantısı kurulmaz</td><td>subprocess, socket, urllib, http, requests, ctypes, signal modülleri kullanılmaz</td><td><code>test_no_dangerous_modules_are_imported</code></td></tr>
+  <tr><td>Veri yalnızca kullanıcı isteğiyle dışa aktarılır</td><td>Varsayılan konum ev dizini. Kullanıcı yolu seçer. Atomik yazım ve 0600 izinleri</td><td><code>test_no_files_are_written_without_explicit_export</code></td></tr>
+  <tr><td>Kişisel veri sızmaz</td><td>Raporlarda kullanıcı adı ve makine adı yoktur</td><td><code>test_report_does_not_contain_user_or_host_name</code></td></tr>
+  <tr><td>Bellek sınırlı</td><td>30 dk yaş sınırı + sabit kapasite. Uyarı günlüğü 200 kayıt</td><td>Tampon testleri</td></tr>
+  <tr><td>Sentetik veri gerçek sanılmaz</td><td>Şerit, <code>data_source</code>, <code>is_synthetic</code>, <code>[SENTETİK]</code></td><td>GUI, dışa aktarma ve komut satırı testleri</td></tr>
+</table>
+<p class="small">Not: Geliştirici betiği <code>scripts/build_submission.py</code>, teslim paketini oluşturmak için yalnızca
+<code>git ls-files</code> çalıştırır. Bu betik uygulamanın parçası değildir ve güvenlik taraması uygulama paketini (<code>pardusinsight/</code>) kapsar.</p>
+
+<!-- =============================== 15 =============================== -->
+<h2>15. Grup üyelerinin katkıları</h2>
+<div class="note"><b>Önemli:</b> Aşağıdaki "planlanan sorumluluk" sütunu Aşama 1 önerisindeki iş
+bölümüdür ve <b>gerçekleşmiş katkı olarak sunulmamaktadır</b>. Bu sürümün kodu, belgeleri ve
+testleri yapay zekâ desteğiyle üretilmiştir (Bölüm 18). Git geçmişindeki commit'ler depoyu
+oluşturan üyenin kimliğiyle atılmış ve her commit mesajında modülün planlanan sorumlusu
+belirtilmiştir. Diğer üyeler adına commit atılmamıştır. <b>Her üyenin gerçekleştirdiği
+geliştirme, test ve doğrulama görevleri teslimden önce ekip tarafından doldurulmalıdır.</b></div>
+<table>
+  <tr><th style="width:18%">Üye</th><th style="width:36%">Planlanan sorumluluk (Aşama 1)</th><th style="width:30%">Gerçekleşen katkı</th><th style="width:16%">Doğrulama</th></tr>
+  <tr><td>Eren Can Dönertaş</td><td>Metrik toplama, normalizasyon ve tampon: <code>collectors/</code>, <code>core/</code>. Metrik doğrulama, performans, uyumluluk</td><td class="na">[EKİP DOLDURACAK]</td><td class="na">Doğrulanmadı</td></tr>
+  <tr><td>Yusuf Yankı Ütgün</td><td>Masaüstü arayüzü, grafikler ve raporlama: <code>ui/</code>, <code>export/</code>. Uyarı kartları, kullanıcı rehberi, demo</td><td class="na">[EKİP DOLDURACAK]</td><td class="na">Doğrulanmadı</td></tr>
+  <tr><td>Oğuz Giray Bori</td><td>Analiz motoru, test otomasyonu ve paketleme: <code>analysis/</code>, <code>tests/</code>, <code>scripts/</code>. Pardus VM, test raporu</td><td class="na">[EKİP DOLDURACAK]</td><td class="na">Doğrulanmadı</td></tr>
+</table>
+<p>Teslimden önce yapılması önerilen ve her üyenin kendi commit'iyle kaydedilecek işler:
+Pardus doğrulaması ve kalibrasyon, XFCE'de arayüz kontrolü, demo videosu, bu tablonun
+doldurulması. Ayrıntılar <code>docs/GOREV_DAGILIMI.md</code> belgesindedir.</p>
+
+<!-- =============================== 16 =============================== -->
+<h2>16. Bilinen kısıtlar ve geliştirme önerileri</h2>
+<h3>16.1 Bilinen kısıtlar</h3>
+<ul>
+  <li><b>Pardus 25.1 XFCE üzerinde test edilmedi</b> (Bölüm 12). Performans ve görünüm Pardus'ta doğrulanmalı.</li>
+  <li>Eşikler sentetik senaryolara göre seçildi. Hedef ortamda <b>kalibre edilmedi</b>. Olağan kullanımda yanlış pozitif oranı ölçülmedi.</li>
+  <li>Standart kullanıcı, başka kullanıcılara ait süreçlerin G/Ç sayaçlarını okuyamaz. Disk kuralının süreç bağlamı bu yüzden eksik olabilir.</li>
+  <li>Süreç değerleri örnekleme anlarına aittir. 2 saniyeden kısa yaşayan süreçler görünmeyebilir.</li>
+  <li>RSS paylaşılan belleği birden fazla kez sayabilir (PSS/USS kullanılmadı).</li>
+  <li>Disk meşguliyeti (%util) NVMe/SSD'de doygunluğu abartabilir. Disk kuralı bu yüzden yalnızca gözlem üretir.</li>
+  <li>PSI kapalı çekirdeklerde bellek kuralı swap ve page-fault göstergeleriyle sınırlı kalır.</li>
+  <li>Ayarlar oturum boyunca geçerlidir. Kalıcı ayar dosyası yalnızca <code>--config</code> ile okunur, uygulama ayar yazmaz.</li>
+  <li>Tek çekirdekli sistemlerde süreç taraması, CPU hedefinin daha büyük bir payını tüketebilir (ölçülmedi).</li>
+  <li>Demo videosu henüz çekilmedi. <code>VIDEO_LINK.txt</code> bekleme durumundadır.</li>
+</ul>
+<h3>16.2 Geliştirme önerileri</h3>
+<ul>
+  <li>Pardus'ta 30 dakikalık olağan kullanım kayıtlarıyla eşik kalibrasyonu ve yanlış pozitif ölçümü</li>
+  <li>cgroup v2 (<code>memory.pressure</code>, <code>cpu.stat</code>) ile oturum veya uygulama bazında baskı analizi</li>
+  <li>Süreç bazında PSS (<code>/proc/&lt;pid&gt;/smaps_rollup</code>) ile daha doğru bellek bağlamı</li>
+  <li>Pardus için <code>.deb</code> paketi ve masaüstü simgesi</li>
+  <li>Ağ arayüzü sayaçları (<code>/proc/net/dev</code>, yalnızca okuma) ve sıcaklık (<code>/sys/class/thermal</code>)</li>
+  <li>GNOME/Wayland uyumluluk raporu (Aşama 1'deki ek hedef)</li>
+</ul>
+
+<!-- =============================== 17 =============================== -->
+<h2>17. Kaynakça</h2>
+<ol class="small">
+  <li>BİL461 Proje Aşama 1 ve Aşama 2 yönergeleri, TOBB ETÜ, 2026.</li>
+  <li>PardusInsight Aşama 1 proje önerisi (BIL461_PardusInsight.pdf), 2026.</li>
+  <li>Linux man-pages, <i>proc(5)</i>: https://man7.org/linux/man-pages/man5/proc.5.html</li>
+  <li>Linux çekirdeği belgeleri, <i>I/O statistics fields</i> (Documentation/admin-guide/iostats.rst).</li>
+  <li>Linux çekirdeği belgeleri, <i>PSI – Pressure Stall Information</i> (Documentation/accounting/psi.rst).</li>
+  <li>Linux çekirdeği belgeleri, <i>/proc/meminfo</i> ve <i>/proc/vmstat</i> açıklamaları (Documentation/filesystems/proc.rst).</li>
+  <li>psutil belgeleri ve lisansı (BSD-3-Clause): https://psutil.readthedocs.io, https://github.com/giampaolo/psutil</li>
+  <li>Qt for Python (PySide6) belgeleri ve lisansları: https://doc.qt.io/qtforpython-6/</li>
+  <li>Python Software Foundation License: https://www.python.org/psf/summary/</li>
+  <li>Debian 13 (trixie) paketi <i>python3-pyside6.qtwidgets</i>: https://packages.debian.org/trixie/python3-pyside6.qtwidgets</li>
+  <li>Pardus 25.1 sürüm notları: https://pardus.org.tr/pardus-25-1-surum-notlari</li>
+  <li>Pardus Docker Hub organizasyonu (pardus/yirmibes): https://hub.docker.com/r/pardus/yirmibes</li>
+  <li>htop (GPL-2.0-or-later), yalnızca işlevsel karşılaştırma için: https://github.com/htop-dev/htop</li>
+</ol>
+
+<!-- =============================== 18 =============================== -->
+<h2>18. Yapay zekâ kullanım beyanı</h2>
+<p>Ders yönergesi yapay zekâ kullanımına izin verir ve hangi amaçlarla kullanıldığının açıklanmasını
+ister. Bu projede yapay zekâ şu şekilde kullanılmıştır:</p>
+<ul>
+  <li><b>Aşama 1:</b> Öneri metninin taslağı, planlama, dil kontrolü ve test senaryolarının yapılandırılması.</li>
+  <li><b>Aşama 2:</b> Uygulamanın bu sürümü, ekibin onaylanan Aşama 1 önerisi ve Aşama 2 yönergesi girdi olarak
+  verilerek <b>Anthropic Claude (Claude Code)</b> ile üretilmiştir. Yapay zekânın katkısı mimari taslak,
+  bütün modüllerin kodu, kural eşiklerinin ilk değerleri, otomatik testler, sentetik senaryolar,
+  ölçüm betikleri, belgeler ve bu raporun taslağıdır. Testler ve ölçümler araç tarafından gerçekten
+  çalıştırılmış, çıktıları bu rapora olduğu gibi aktarılmıştır. Pardus testi yapılamadığı açıkça belirtilmiştir.</li>
+  <li><b>Ekibin sorumluluğu:</b> Her üye teslim edilen kodu, teknik tercihleri ve çalışma ilkelerini
+  anlayıp açıklayabilmelidir. Bunun için <code>ORAL_EXAM_PREP.md</code> hazırlanmıştır. Pardus
+  doğrulaması, eşik kalibrasyonu, demo videosu ve Bölüm 15'teki katkı tablosu ekip tarafından
+  tamamlanmalıdır.</li>
+  <li>Hazır bir proje kopyalanmamıştır. Açık kaynak bileşenler yalnızca lisanslarına uygun biçimde
+  bağımlılık olarak kullanılmıştır (<code>THIRD_PARTY_NOTICES.md</code>).</li>
+</ul>
+
+</body>
+</html>
