@@ -88,7 +88,8 @@ class AlertsPanel(QWidget):
             state = "AKTİF" if a.active else f"çözüldü {fmt_time(a.resolved_at)}"
             item = QListWidgetItem(
                 f"{SEVERITY_ICON.get(a.severity, '•')} {a.title}\n"
-                f"   {a.severity_label} · {fmt_time(a.first_seen)}–{fmt_time(a.last_seen)} · {state}")
+                f"   {a.severity_label} · {fmt_time(a.first_seen)}–{fmt_time(a.last_seen)}"
+                f" · {state}")
             item.setData(Qt.ItemDataRole.UserRole, a.alert_id)
             item.setToolTip(a.summary)
             if a.active:

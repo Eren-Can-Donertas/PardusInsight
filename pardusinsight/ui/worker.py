@@ -52,11 +52,11 @@ class SamplerWorker(QObject):
         except Exception as exc:
             self.failed.emit(f"Ayarlar uygulanamadı: {exc}")
 
-    @Slot(object, str)
-    def load_recording(self, samples: List[SystemSample], label: str) -> None:
+    @Slot(object, str, str)
+    def load_recording(self, samples: List[SystemSample], label: str, source: str) -> None:
         self.stop()
         try:
-            result = self.service.load_recording(samples)
+            result = self.service.load_recording(samples, source)
         except Exception as exc:
             self.failed.emit(f"Kayıt analiz edilemedi: {type(exc).__name__}: {exc}")
             return

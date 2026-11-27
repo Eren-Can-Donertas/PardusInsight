@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
                                QGroupBox, QLabel, QMessageBox, QSpinBox, QVBoxLayout, QWidget)
@@ -85,7 +85,7 @@ class SettingsDialog(QDialog):
             spin.setValue(float(getattr(defaults, name)))
 
     def build_settings(self) -> AppSettings:
-        values = {name: spin.value() for name, spin in self._spins.items()}
+        values: Dict[str, Any] = {name: spin.value() for name, spin in self._spins.items()}
         values["consecutive_windows"] = int(values["consecutive_windows"])
         analysis = replace(self._settings.analysis, **values)
         settings = replace(self._settings, process_every=self.process_every.value(),
