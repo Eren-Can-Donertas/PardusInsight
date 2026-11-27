@@ -6,11 +6,12 @@ komut satırı yedeğidir; ayrıca otomatik testlerde kullanılır.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 import time
 from dataclasses import replace
-from typing import List, Optional, Sequence
+from typing import Optional, Sequence
 
 from . import APP_NAME, __version__
 from .analysis.explain import alert_to_text
@@ -55,7 +56,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--export-csv", metavar="DOSYA",
                    help="headless bitiminde örnekleri CSV'ye yaz (uyarılar *_uyarilar.csv)")
     p.add_argument("--export-json", metavar="DOSYA", help="headless bitiminde JSON rapor yaz")
+    p.add_argument("--log-level", default="WARNING",
+                   choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+                   help="tanılama günlüğü düzeyi (yalnızca stderr; dosyaya yazılmaz)")
     return p
+
+
+SYNTHETIC_BANNER = ("=" * 72 + "\n DEMO / SENTETİK VERİ — aşağıdaki değerler gerçek sistem ölçümü "
+                    "DEĞİLDİR.\n" + "=" * 72)
 
 
 def resolve_settings(args: argparse.Namespace) -> AppSettings:
@@ -76,10 +84,12 @@ def alerts_csv_path(samples_path: str) -> str:
     return f"{root}_uyarilar{ext or '.csv'}"
 
 
-def sample_line(sample: SystemSample, active: int) -> str:
-    return (f"{fmt_time(sample.timestamp)}  CPU {fmt_pct(sample.cpu_percent):>7} | "
+def sample_line(sample: SystemSample, active: int, synthetic: bool = False) -> str:
+    prefix = "[SENTETİK] " if synthetic else ""
+    return (f"{prefix}{fmt_time(sample.timestamp)}  CPU {fmt_pct(sample.cpu_percent):>7} | "
             f"RAM {fmt_pct(sample.mem_used_percent):>6} (kullanılabilir "
-            f"{fmt_bytes(sample.mem_available_bytes)}) | Swap {fmt_pct(sample.swap_used_percent)} | "
+            f"{fmt_bytes(sample.mem_available_bytes)}) | "
+            f"Swap {fmt_pct(sample.swap_used_percent)} | "
             f"Disk O {fmt_rate(sample.disk_read_bytes_per_s)} Y "
             f"{fmt_rate(sample.disk_write_bytes_per_s)} | aktif uyarı: {active}")
 
@@ -89,13 +99,13 @@ def export_results(service: MonitorService, csv_path: Optional[str],
     samples = service.history.snapshot()
     alerts = service.engine.alert_log()
     if csv_path:
-        n = write_samples_csv(csv_path, samples)
+        n = write_samples_csv(csv_path, samples, data_source=service.data_source)
         a_path = alerts_csv_path(csv_path)
         m = write_alerts_csv(a_path, alerts)
         print(f"CSV yazıldı: {csv_path} ({n} örnek), {a_path} ({m} uyarı)", file=out)
     if json_path:
         report = build_report(samples, alerts, settings_to_dict(service.settings),
-                              source=service.source_name)
+                              source=service.data_source)
         write_json_report(json_path, report)
         print(f"JSON rapor yazıldı: {json_path} ({len(samples)} örnek, {len(alerts)} uyarı)",
               file=out)
@@ -109,6 +119,8 @@ def run_headless(service: MonitorService, args: argparse.Namespace, out=None) ->
     started = time.monotonic()
     next_at = started
     ticks = 0
+    if service.is_synthetic:
+        print(SYNTHETIC_BANNER, file=out)
     print(f"{APP_NAME} {__version__} — kaynak: {service.source_name}, aralık {interval} sn. "
           "Durdurmak için Ctrl+C.", file=out)
     try:
@@ -118,7 +130,8 @@ def run_headless(service: MonitorService, args: argparse.Namespace, out=None) ->
             for err in result.errors:
                 print(f"  ! {err}", file=out)
             if result.sample is not None and not args.quiet:
-                print(sample_line(result.sample, len(result.update.active)), file=out)
+                print(sample_line(result.sample, len(result.update.active),
+                                  service.is_synthetic), file=out)
             for alert in result.update.new:
                 print("\n" + alert_to_text(alert) + "\n", file=out)
             for alert in result.update.resolved:
@@ -147,7 +160,9 @@ def run_replay(path: str, settings: AppSettings, args: argparse.Namespace,
         print(f"Kayıt yüklenemedi: {exc}", file=sys.stderr)
         return None
     service = MonitorService(RecordingSource(os.path.basename(path)), None, settings)
-    result = service.load_recording(data.samples)
+    result = service.load_recording(data.samples, str(data.meta.get("source", "unknown")))
+    if service.is_synthetic:
+        print(SYNTHETIC_BANNER, file=out)
     print(f"{len(data.samples)} örnek yüklendi; kurallar yeniden çalıştırıldı "
           f"({result.duration_s * 1000:.0f} ms).", file=out)
     for alert in result.alert_log:
@@ -166,6 +181,8 @@ def warn_if_root(out=None) -> None:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+    logging.basicConfig(level=getattr(logging, args.log_level), stream=sys.stderr,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     if args.list_scenarios:
         for name in scenario_names():
             print(f"{name:18s} {scenario_description(name)}")

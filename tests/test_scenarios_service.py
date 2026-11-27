@@ -51,7 +51,7 @@ def test_scenarios_are_deterministic_for_same_seed():
 def test_memory_alert_explains_with_top_memory_process():
     service = run_scenario("memory")
     alert = next(a for a in service.engine.alert_log() if a.rule_id == "memory_pressure")
-    # Uyarı, koşul bittikten sonra da güncellenir; bağlam yine baskı anındaki en büyük RSS'i gösterir
+    # Uyarı koşul bittikten sonra da güncellenir; bağlam baskı anındaki en büyük RSS'i gösterir
     assert not alert.active
     assert alert.context[0].startswith("firefox-esr") and "4,4 GiB" in alert.context[0]
     assert alert.window_start >= service.history.snapshot()[0].timestamp

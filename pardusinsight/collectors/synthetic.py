@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from ..core.models import (CpuTimes, DiskCounters, MemoryInfo, PressureInfo,
                            ProcessInfo, ProcessSnapshot, RawSnapshot, VmCounters)
@@ -49,17 +49,18 @@ def _normal(duration: float, name: str = "normal") -> Phase:
                  description="Olağan masaüstü kullanımı")
 
 
-CPU_PHASE = dict(cpu_percent=95.0, hot="cpu",
+CPU_PHASE: Dict[str, Any] = dict(cpu_percent=95.0, hot="cpu",
                  description="Uzun süren derleme benzeri yüksek CPU kullanımı")
-MEMORY_PHASE = dict(mem_available_percent=6.0, swap_used_percent=65.0,
+MEMORY_PHASE: Dict[str, Any] = dict(mem_available_percent=6.0, swap_used_percent=65.0,
                     swap_pages_per_s=600.0, major_faults_per_s=400.0,
                     psi_memory_some=25.0, cpu_percent=35.0, cpu_iowait_percent=8.0,
                     disk_read_mib_s=2.0, disk_write_mib_s=1.5, disk_busy_percent=30.0,
                     hot="memory",
                     description="Tarayıcı belleği büyüyor, swap etkinliği artıyor")
-DISK_PHASE = dict(disk_read_mib_s=70.0, disk_write_mib_s=45.0, disk_busy_percent=92.0,
-                  cpu_iowait_percent=15.0, cpu_percent=25.0, hot="io",
-                  description="Büyük dosya kopyalama/yedekleme benzeri disk etkinliği")
+DISK_PHASE: Dict[str, Any] = dict(
+    disk_read_mib_s=70.0, disk_write_mib_s=45.0, disk_busy_percent=92.0,
+    cpu_iowait_percent=15.0, cpu_percent=25.0, hot="io",
+    description="Büyük dosya kopyalama/yedekleme benzeri disk etkinliği")
 
 
 def _spiky_cpu(total_s: float, high_s: float = 8.0, low_s: float = 22.0) -> List[Phase]:
@@ -139,6 +140,7 @@ class SyntheticSource:
             raise ValueError(f"Bilinmeyen senaryo: {scenario}. "
                              f"Seçenekler: {', '.join(scenario_names())}")
         self.scenario = scenario
+        self.source_name = f"synthetic:{scenario}"  # raporlarda ve arayüzde görünür
         self.phases = SCENARIOS[scenario][1]
         self.total_duration = sum(p.duration_s for p in self.phases)
         self.step_s = step_s
@@ -235,7 +237,8 @@ class SyntheticSource:
             disks={"sda": DiskCounters(read_bytes=int(self._disk[0]),
                                        write_bytes=int(self._disk[1]),
                                        busy_ms=int(self._disk[2]),
-                                       read_count=self._disk[3], write_count=self._disk[4])},
+                                       read_count=int(self._disk[3]),
+                                       write_count=int(self._disk[4]))},
             load1=round(busy / 100.0 * ncpu + blocked, 2),
             procs_running=max(1, int(round(busy / 100.0 * ncpu))),
             procs_blocked=blocked,

@@ -14,7 +14,8 @@ from ..core.formatting import fmt_iso
 from ..core.models import (SAMPLE_METRIC_FIELDS, Alert, SystemSample, sample_from_dict)
 from .atomic import atomic_write
 
-SAMPLE_COLUMNS: List[str] = ["time_iso", *SAMPLE_METRIC_FIELDS, "errors"]
+#: Son sütun verinin kaynağıdır: "linux" (gerçek ölçüm), "synthetic:<senaryo>" (demo) vb.
+SAMPLE_COLUMNS: List[str] = ["time_iso", *SAMPLE_METRIC_FIELDS, "errors", "data_source"]
 ALERT_COLUMNS: List[str] = [
     "alert_id", "rule_id", "title", "severity", "severity_label", "confidence", "active",
     "first_seen_iso", "last_seen_iso", "resolved_at_iso", "window_start_iso",
@@ -26,15 +27,20 @@ def _cell(value: object) -> object:
     return "" if value is None else value
 
 
-def write_samples_csv(path: str, samples: Sequence[SystemSample]) -> int:
-    """Örnekleri yazar ve yazılan satır sayısını döndürür."""
+def write_samples_csv(path: str, samples: Sequence[SystemSample],
+                      data_source: str = "unknown") -> int:
+    """Örnekleri yazar ve yazılan satır sayısını döndürür.
+
+    Her satıra veri kaynağı yazılır; sentetik (demo) veri gerçek ölçümle karıştırılamaz.
+    """
     with atomic_write(path) as handle:
         writer = csv.writer(handle)
         writer.writerow(SAMPLE_COLUMNS)
         for sample in samples:
-            row = [fmt_iso(sample.timestamp)]
+            row: List[object] = [fmt_iso(sample.timestamp)]
             row.extend(_cell(getattr(sample, name)) for name in SAMPLE_METRIC_FIELDS)
             row.append(" | ".join(sample.errors))
+            row.append(data_source)
             writer.writerow(row)
     return len(samples)
 

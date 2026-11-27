@@ -4,7 +4,6 @@ import io
 import os
 from pathlib import Path
 
-import pytest
 
 from pardusinsight import cli
 from pardusinsight.export import load_json_report, read_samples_csv
@@ -120,3 +119,26 @@ def test_root_warning_is_informational(monkeypatch):
     buf = io.StringIO()
     cli.warn_if_root(buf)
     assert "root yetkisi gerektirmez" in buf.getvalue()
+
+
+def test_synthetic_headless_output_is_clearly_labelled(capsys):
+    cli.main(["--headless", "--synthetic", "normal", "--speed", "0", "--ticks", "2"])
+    out = capsys.readouterr().out
+    assert "DEMO / SENTETİK VERİ" in out
+    assert all(line.startswith("[SENTETİK]") for line in out.splitlines() if "CPU" in line
+               and "RAM" in line)
+
+
+def test_methodology_lists_sources_rules_and_current_thresholds():
+    from dataclasses import replace
+
+    from pardusinsight.analysis.methodology import methodology_html
+    from pardusinsight.config import AppSettings
+
+    settings = AppSettings()
+    settings = replace(settings, analysis=replace(settings.analysis, cpu_high_pct=91.0))
+    html = methodology_html(settings)
+    for text in ("/proc/stat", "/proc/vmstat", "/proc/diskstats", "Bellek baskısı olasılığı",
+                 "Kalıcı CPU yoğunluğu", "Disk G/Ç etkinliği anomalisi", "%91",
+                 "kesin arıza tanısı değildir"):
+        assert text in html, text

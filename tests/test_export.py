@@ -1,7 +1,6 @@
 """CSV/JSON dışa aktarma, geri okuma ve gizlilik testleri."""
 import getpass
 import json
-import os
 import socket
 
 import pytest
@@ -116,3 +115,20 @@ def test_settings_dict_roundtrip_ignores_unknown_keys():
     data["gelecekte_eklenecek"] = 1
     data["analysis"]["bilinmeyen"] = 2
     assert settings_from_dict(data) == AppSettings()
+
+
+def test_csv_and_json_mark_data_source_and_units(tmp_path, recorded):
+    import csv as csv_module
+
+
+    samples, alerts, _ = recorded
+    path = tmp_path / "demo.csv"
+    write_samples_csv(str(path), samples[:3], data_source="synthetic:demo")
+    with open(path, encoding="utf-8", newline="") as handle:
+        rows = list(csv_module.DictReader(handle))
+    assert {row["data_source"] for row in rows} == {"synthetic:demo"}
+    report = build_report(samples[:3], alerts, source="synthetic:demo")
+    assert report["is_synthetic"] is True
+    assert build_report(samples[:3], [], source="linux")["is_synthetic"] is False
+    # Her ölçüm alanının birimi belgelenmiş olmalı
+    assert set(SAMPLE_METRIC_FIELDS) <= set(report["units"])
