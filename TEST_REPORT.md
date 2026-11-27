@@ -108,7 +108,18 @@ Denetleyicinin kendisi ihlal ve izinli örneklerle sınanır. Bunlara ek olarak 
 
 ZIP sonuçları son derlemeden sonra aşağıya eklenir.
 
-*(Son derleme ve temiz kurulum sonuçları: bölüm 6.1.)*
+### 6.1 Son derleme ve temiz kurulum (geliştirme makinesi)
+
+| Kontrol | Sonuç |
+|---|---|
+| `build_submission.py` denetimi | PASS: 98 dosya, ~1,0 MiB sıkıştırılmış; yapı, yasak dosyalar, README bağlantıları ve VIDEO_LINK uygun |
+| ZIP yeni klasöre açıldı (`.git` yok) → `source_code/` içinde yeni sanal ortam → `pip install -r requirements-dev.txt` | PASS |
+| `python -m pytest -q` (ZIP'ten, Git deposu olmadan) | **329 passed** |
+| `--replay scenarios/demo.json` | PASS: 3 uyarı, sentetik veri başlığı |
+| 6 sn canlı headless + `--export-csv/--export-json` | PASS (`data_source=linux`) |
+| `python scripts/build_deb.py` (ZIP'ten) | PASS: `pardusinsight_0.1.0_all.deb`, 50 dosya, 186,7 KiB; `dpkg-deb --info`: Depends python3 (≥ 3.9), python3-psutil (≥ 5.9), python3-pyside6.* (≥ 6.5) |
+| `pip install .` → `pardusinsight --version` | PASS |
+| Durum | **Ön teslim**: `VIDEO_LINK.txt` = `VIDEO_LINK_PENDING` |
 
 ## 7. Doğrulanmayanlar
 
