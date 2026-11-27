@@ -131,6 +131,36 @@ sözdizimi ağacını (AST) tarar. `subprocess`, `socket`, `signal` gibi modüll
 `terminate`, `nice` gibi çağrıların bulunmadığını, `open()` çağrılarının yalnızca `"r"` kipinde
 olduğunu doğrular. Ayrıca açık istek yokken hiçbir dosya yazılmadığını test eder.
 
+**S24. Pardus'ta nasıl test ettiniz? Konteyner testi neyi kanıtlar, neyi kanıtlamaz?**
+GitHub Actions her push'ta resmî Pardus 25.1 ve 25.2 Docker imajında (`pardus/yirmibes`)
+bağımlılıkları **Pardus deposundan** kurar. Testleri root olmayan bir kullanıcıyla çalıştırır,
+`.deb` paketini apt ile kurup dener, kabul betiğini (`scripts/pardus_kabul.py`) koşturur. Bu,
+paket adlarını, Python/PySide6/psutil sürümlerini (3.13.5 / 6.8.2.1 / 7.0.0) ve standart
+kullanıcıyla çalışmayı kanıtlar. **Kanıtlamaz:** Çekirdek GitHub sunucusunundur (PSI, disk
+aygıtları Pardus çekirdeğinden farklı olabilir) ve XFCE masaüstü yoktur. Bunlar için temiz XFCE VM
+gerekir. → `.github/workflows/ci.yml`, `docs/PARDUS_DOGRULAMA.md`
+
+**S25. Veri yetersizken uyarı neden kapanmıyor?** Örnekleme durakladığında veya veri boşluğu
+olduğunda koşulun bittiği bilinemez. Uyarıyı "çözüldü" saymak sahte çözülmeye ve aynı yük için
+birden çok uyarıya yol açardı. Bu yüzden kural "yetersiz veri" döndürünce aktif uyarı açık kalır.
+Ancak veri bir değerlendirme dönemi + bekleme süresi boyunca yetersiz kalırsa kapatılır.
+→ `analysis/engine.py`
+
+**S26. Kayıt 2 sn aralıkla alındı ama 1 sn ayarıyla açıldı; ne olur?** Kurallar pencere başına
+beklenen örnek sayısını örnekleme aralığından hesaplar. Ayardaki aralık kullanılsaydı her pencere
+"yetersiz" sayılır ve hiç uyarı çıkmazdı. Motor, örneklerin **gözlenen** aralığını (medyan)
+kullanır. → `RuleEngine.effective_settings`
+
+**S27. Eşikleri nasıl kalibre edersiniz?** `scripts/kalibrasyon.py`, olağan kullanım
+kayıtlarında yanlış pozitif varsa eşiği yükseltir, bilinen yoğun kayıtta uyarı kaçarsa düşürür.
+Gerçek veriyle kalibrasyon VM'de 30 dk kayıtla yapılır. → `analysis/calibration.py`,
+`docs/KALIBRASYON_SENTETIK.md`
+
+**S28. Testlerinizin gerçekten kural mantığını sınadığını nereden biliyorsunuz?** Mutasyon
+denemesi yapıldı: kural, motor ve pencere kodunda 23 bilinçli hata oluşturuldu ve her biri en
+az bir testi düşürdü. Örneğin "her pencerede → herhangi bir pencerede" veya "medyan → ortalama"
+değişiklikleri yakalanıyor. → `docs/TEST_RAPORU.md` §1.3
+
 ## 3. Kod değişikliği senaryoları (sınavda "şunu değiştirin" denebilir)
 
 | Senaryo | Nereye dokunulur | Dikkat |
@@ -150,10 +180,12 @@ olduğunu doğrular. Ayrıca açık istek yokken hiçbir dosya yazılmadığın�
   `history.py`, `service.py`. `/proc` doğrulama tablosu ve performans ölçümü.
 - **Yusuf (arayüz, grafikler, raporlama):** S17, S21. `ui/` paketi, worker/QThread,
   CSV/JSON biçimi, demo şeridi, Metodoloji ekranı.
-- **Oğuz (analiz motoru, test, paketleme):** S19, S20, S22, S23. `rules.py`, `engine.py`,
-  sentetik senaryolar, test stratejisi, `build_submission.py`.
+- **Oğuz (analiz motoru, test, paketleme):** S19, S20, S22–S28. `rules.py`, `engine.py`,
+  `calibration.py`, sentetik senaryolar, test stratejisi ve mutasyon denemesi, CI ve Pardus
+  kapsayıcısı, `.deb` paketi, `pardus_kabul.py`.
 
-Bu dağılım öneri planıdır. Sunumda herkes **gerçekte yaptığı** işi anlatmalıdır.
+Bu dağılım öneri planıdır. Sunumda herkes **gerçekte yaptığı** işi anlatmalıdır. Git
+kayıtlarında görünen katkılar teknik raporun 15. bölümündedir.
 
 ## 5. En sık sorulabilecek 10 soru (hızlı tekrar)
 
@@ -166,4 +198,6 @@ Bu dağılım öneri planıdır. Sunumda herkes **gerçekte yaptığı** işi an
 7. GUI neden donmaz? → QThread worker + değişmez sonuç nesneleri.
 8. Bellek neden büyümez? → 30 dk yaş sınırı + sabit kapasite.
 9. Root olmadan ne okunamaz? → Başka kullanıcıların `/proc/<pid>/io` dosyaları.
-10. Pardus ile ilişkisi? → Hedef Pardus 25.1 XFCE; Debian 13 paketleriyle kurulum; standart kullanıcı.
+10. Pardus ile ilişkisi? → Hedef Pardus 25.1 XFCE; Pardus deposundaki paketlerle ve `.deb` ile
+    kurulum; CI'da resmî Pardus 25.1/25.2 kapsayıcısında standart kullanıcıyla test; XFCE VM
+    doğrulaması ekipte.

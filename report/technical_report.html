@@ -67,9 +67,11 @@
     <p><b>Hedef platform:</b> Pardus 25.1 XFCE (x86-64), standart kullanıcı yetkisi.</p>
     <p><b>Kaynak kod:</b> https://github.com/Eren-Can-Donertas/PardusInsight · Sürüm 0.1.0</p>
     <p><b>Rapor tarihi:</b> 27 Kasım 2026 · <b>Nihai teslim:</b> 7 Aralık 2026</p>
-    <p><b>Doğrulama durumu özeti:</b> Otomatik testler ve ölçümler Ubuntu 24.04 geliştirme makinesinde
-      yapılmıştır. <b>Pardus 25.1 XFCE üzerinde test henüz yapılmamıştır</b> (Bölüm 12). Bu raporda
-      ölçülmemiş hiçbir sonuç ölçülmüş gibi sunulmamıştır.</p>
+    <p><b>Doğrulama durumu özeti:</b> Otomatik testler her push'ta GitHub Actions'ta <b>resmî Pardus
+      25.1 ve 25.2 Docker imajlarında</b> (Pardus deposundaki paketlerle, root olmayan kullanıcıyla)
+      ve Ubuntu/Windows'ta çalıştırılmaktadır. Geliştirme makinesi Ubuntu 24.04'tür. <b>Temiz bir Pardus
+      25.1 XFCE sanal makinesinde doğrulama henüz yapılmamıştır</b> (Bölüm 12). Bu raporda ölçülmemiş
+      hiçbir sonuç ölçülmüş gibi sunulmamıştır.</p>
   </div>
 </section>
 
@@ -141,6 +143,9 @@ ve ağ bağlantısı kurmaz.</p>
   <tr><td>CSV ve JSON raporu, kayıt yeniden analizi</td><td class="ok">Çalışıyor</td><td><code>export/</code></td></tr>
   <tr><td>Sentetik demo modu (açık etiketli), GUI'siz komut satırı modu</td><td class="ok">Çalışıyor</td><td><code>collectors/synthetic.py</code>, <code>cli.py</code></td></tr>
   <tr><td>Metodoloji ekranı (veri kaynakları ve geçerli eşikler)</td><td class="ok">Çalışıyor</td><td><code>analysis/methodology.py</code></td></tr>
+  <tr><td>Pardus/Debian <code>.deb</code> paketi (menü kaydı, simge, man sayfası)</td><td class="ok">Çalışıyor</td><td><code>packaging/</code>, <code>scripts/build_deb.py</code></td></tr>
+  <tr><td>Eşik kalibrasyon aracı (kayıtlar üzerinde duyarlılık taraması)</td><td class="ok">Çalışıyor</td><td><code>analysis/calibration.py</code>, <code>scripts/kalibrasyon.py</code></td></tr>
+  <tr><td>Sürekli entegrasyon ve Pardus kabul betiği</td><td class="ok">Çalışıyor</td><td><code>.github/workflows/</code>, <code>scripts/pardus_kabul.py</code></td></tr>
 </table>
 <h3>4.2 Mevcut çözümlerden farkı</h3>
 <p><b>htop</b>, <b>xfce4-taskmanager</b> veya <b>GNOME Sistem İzleyicisi</b> anlık değerleri ve süreçleri gösterir. Yorumlama
@@ -159,12 +164,13 @@ kullanıcıya kalır. PardusInsight'ın özgün katkısı bu araçların yerine 
 <h2>5. Teknik yaklaşım ve kullanılan teknolojiler</h2>
 <table>
   <tr><th>Bileşen</th><th>Sürüm (test edilen)</th><th>Lisans</th><th>Kullanım amacı</th></tr>
-  <tr><td>Python</td><td>3.12.3 (geliştirme); hedef ≥ 3.9, Pardus 25 ile 3.13 beklenir</td><td>PSF</td><td>Uygulama dili</td></tr>
+  <tr><td>Python</td><td>3.12.3 (geliştirme); CI'da 3.9, 3.13 ve Pardus 25.1'deki 3.13.5</td><td>PSF</td><td>Uygulama dili</td></tr>
   <tr><td>Linux procfs, sysfs</td><td>Çekirdek 7.0 (geliştirme makinesi)</td><td>—</td><td>Birincil metrik kaynağı (salt-okunur)</td></tr>
   <tr><td>psutil</td><td>7.2.2 ve 5.9.8</td><td>BSD-3-Clause</td><td>Süreç listesi; /proc okunamazsa yedek; çapraz doğrulama</td></tr>
   <tr><td>PySide6 (QtCore/QtGui/QtWidgets)</td><td>6.12.0 ve 6.8.2.1 (Debian 13 sürümü)</td><td>LGPLv3</td><td>Masaüstü arayüzü</td></tr>
   <tr><td>pytest</td><td>9.2.0 ve 8.3.5</td><td>MIT</td><td>Otomatik testler</td></tr>
   <tr><td>ruff, mypy</td><td>0.15.17, 2.4.1</td><td>MIT</td><td>Statik denetim (yalnızca geliştirme)</td></tr>
+  <tr><td>GitHub Actions + resmî Pardus Docker imajı (<code>pardus/yirmibes</code>)</td><td>Pardus 25.1 ve 25.2; Python 3.13.5, PySide6 6.8.2.1, psutil 7.0.0 (Pardus deposu)</td><td>—</td><td>Her push'ta testler, ölçüm doğrulaması, performans, <code>.deb</code> kurulumu, kabul betiği</td></tr>
 </table>
 <p><b>Temel teknik tercihler:</b></p>
 <ol>
@@ -255,6 +261,9 @@ Bu yapı bir kilitle korunur ve okuyana kopya döndürür.</p>
   <tr><td><code>export/</code></td><td>CSV/JSON yazma-okuma, atomik yazım</td></tr>
   <tr><td><code>ui/</code></td><td>Ana pencere, worker, grafik, süreç modeli, uyarı paneli, ayarlar</td></tr>
   <tr><td><code>cli.py</code></td><td>GUI / headless / sentetik / kayıt analizi girişleri, günlük düzeyi</td></tr>
+  <tr><td><code>analysis/calibration.py</code>, <code>scripts/kalibrasyon.py</code></td><td>Kayıtlar üzerinde eşik duyarlılık taraması ve öneri: yanlış pozitifte eşiği yükseltme, kaçırılan yoğun kayıtta düşürme</td></tr>
+  <tr><td><code>packaging/</code>, <code>scripts/build_deb.py</code></td><td>Yeniden üretilebilir <code>.deb</code> paketi; bağımlılıklar Pardus deposundan</td></tr>
+  <tr><td><code>scripts/pardus_kabul.py</code>, <code>.github/workflows/</code></td><td>Pardus kabul listesinin otomasyonu; CI matrisi (Ubuntu, Windows, Pardus 25.1/25.2); 35 dk uzun koşu</td></tr>
 </table>
 <p><b>Bir örnekleme turunun akışı:</b></p>
 <ol>
@@ -297,6 +306,11 @@ NTP veya elle yapılan saat değişikliği pencere sıralamasını bozmaz (test 
   <tr><td>Ayarlardan aralık 0,5 sn'ye düşürülünce tamponun 30 dk yerine 15 dk tutması</td><td>Kapasite aralık değişiminde yeniden hesaplanıyor (test eklendi)</td></tr>
   <tr><td><code>MainWindow.thread</code> niteliğinin <code>QObject.thread()</code> metodunu gölgelemesi (mypy ile bulundu)</td><td><code>sampler_thread</code> olarak yeniden adlandırıldı</td></tr>
   <tr><td>Sentetik verinin gerçek ölçümle karıştırılma riski</td><td>Sarı "DEMO / SENTETİK VERİ" şeridi, CSV'de <code>data_source</code> sütunu, JSON'da <code>is_synthetic</code>, komut satırında <code>[SENTETİK]</code> öneki</td></tr>
+  <tr><td>Veri yetersizken (duraklatma, boşluk) uyarının "çözüldü" sayılması</td><td>Yetersiz veri "bilinmiyor" sayılıyor; aktif uyarı bir değerlendirme dönemi + bekleme süresi boyunca açık kalıyor (Oğuz)</td></tr>
+  <tr><td>2 sn aralıklı kaydın 1 sn ayarıyla açılınca hiç uyarı üretmemesi</td><td>Motor, örneklerin gözlenen aralığını (medyan) kullanıyor (Oğuz)</td></tr>
+  <tr><td>JSON ayarlarında <code>2.0</code> gibi değerlerin TypeError'a yol açması; dışa aktarma klasörü yokken uzun kaydın sonunda veri kaybı</td><td>Tür dönüşümü ve açıklayıcı hata; dışa aktarma hedefi izlemeden önce denetleniyor (Oğuz)</td></tr>
+  <tr><td>Kayıt analizinde 1 sn altı kayıtların kesilmesi; kayıt modunda eşik değişikliğinin etkisiz kalması; ayar kutusunun komut satırı değerlerini kırpması</td><td>Kod incelemesinde bulundu (Oğuz); düzeltildi, regresyon testleri eklendi</td></tr>
+  <tr><td>Paralel geliştirmede dalların ayrışması</td><td>Aşama 2 dalı <code>main</code>'deki 22 commit ile birleştirildi. Çakışmalarda <code>main</code>'deki düzeltmeler esas alındı, yinelenen testler ayıklandı</td></tr>
 </table>
 <h3>8.5 Arayüz</h3>
 <figure><img src="img/canli_genel_bakis.png" alt="Canlı genel bakış">
@@ -329,43 +343,52 @@ abartabilir. Bu yüzden disk kuralı yalnızca gözlem üretir.</p>
 <!-- =============================== 10 =============================== -->
 <h2>10. Test metodolojisi</h2>
 <ul>
-  <li><b>Birim testleri:</b> Ayrıştırıcılar örnek metinlerle ve sahte bir <code>/proc</code> ağacıyla test edilir. Normalizasyon elle hesaplanmış sayaçlarla, kurallar elle kurulmuş örnek dizileriyle doğrulanır. Testler gerçek sistemin o anki CPU/RAM değerlerine bağlı değildir.</li>
-  <li><b>Kural testleri:</b> Her kural için pozitif, negatif, <b>eşik sınırı</b> (eşik değerinin kendisi ve hemen yanı) ve yanlış alarm karşı-örneği testleri vardır.</li>
-  <li><b>Entegrasyon:</b> 8 sentetik senaryo, kaynak → normalizasyon → tampon → kural motoru hattından uçtan uca geçer. Senaryo başına beklenen uyarı kümesi doğrulanır.</li>
-  <li><b>Hata toleransı:</b> Sahte psutil ile kaybolan süreç, AccessDenied, yarıda kesilen tarama ve <code>PermissionError</code> durumları denenir. Gerçek sistemde de tarama sırasında sonlanan çocuk süreçlerle test edilir.</li>
-  <li><b>GUI:</b> <code>QT_QPA_PLATFORM=offscreen</code> ile açılış/kapanış, sekme güncellemeleri, dışa aktarma, kayıt açma, demo şeridi ve <b>donmama testi</b> çalıştırılır. Donmama testinde her ölçüm turu yapay olarak 300 ms sürerken GUI olay döngüsünün kalp atışı ölçülür.</li>
-  <li><b>Güvenlik:</b> Kaynak kodun AST taramasıyla yasak modül/çağrı denetimi, <code>open()</code> kip denetimi ve açık istek olmadan dosya yazılmadığının kontrolü yapılır.</li>
-  <li><b>Canlı doğrulama</b> (<code>-m linux</code>): /proc ile psutil, her biri 10 örnek olmak üzere karşılaştırılır.</li>
-  <li><b>Statik denetim:</b> ruff (E, F, W, B) ve mypy.</li>
+  <li><b>Birim testleri:</b> Ayrıştırıcılar örnek metinlerle ve sahte bir <code>/proc</code> ağacıyla test edilir. Normalizasyon elle hesaplanmış sayaçlarla, kurallar elle kurulmuş örnek dizileriyle sınanır. Testler gerçek sistemin o anki CPU/RAM değerlerine bağlı değildir. Canlı sistemi okuyan testler <code>linux</code> işaretiyle ayrılır.</li>
+  <li><b>Kural testleri:</b> Her kural için pozitif, negatif, <b>eşik sınırı</b> (eşik değerinin kendisi ve hemen yanı) ve yanlış alarm karşı-örneği testleri vardır. Zaman pencereleri ayrıca sınanır: sınır örnekleri, düzensiz aralık, boşluk.</li>
+  <li><b>Mutasyon denemesi:</b> Kural, motor ve pencere kodunda 23 bilinçli hata oluşturuldu ve <b>her biri en az bir testi düşürdü</b>. Örnekler: "her pencerede → herhangi bir pencerede", "medyan → ortalama", "&lt; → &lt;=".</li>
+  <li><b>Entegrasyon:</b> 8 sentetik senaryo uçtan uca çalıştırılır. Kayıtlı senaryo dosyalarının güncel kodla aynı sonucu verdiği denetlenir.</li>
+  <li><b>Hata toleransı:</b> Kaybolan süreç, AccessDenied, PermissionError ve yarıda kesilen tarama durumları denenir. Gerçek sistemde tarama sırasında sonlanan çocuk süreçlerle de test edilir.</li>
+  <li><b>GUI:</b> <code>QT_QPA_PLATFORM=offscreen</code> ile açılış, örnekleme ve temiz kapanış sınanır. Ayrıca dışa aktarma, kayıt açma, demo şeridi ve <b>donmama testi</b> (her ölçüm turu yapay olarak 300 ms sürerken olay döngüsü ölçülür) vardır.</li>
+  <li><b>Güvenlik:</b> Kaynak kodun AST taramasıyla süreç denetimi, ağ, dosya yazma, kalıcı ayar ve yetki yükseltme yasakları denetlenir. Denetleyicinin kendisi de ihlal örnekleriyle sınanır.</li>
+  <li><b>Paket ve kabul:</b> <code>.deb</code> yapısı test edilir. Pardus kapsayıcısında apt ile kurulum ve kaldırma yapılır, lintian çalıştırılır. Kabul listesi <code>scripts/pardus_kabul.py</code> ile otomatik yürütülür.</li>
+  <li><b>Sürekli entegrasyon:</b> Her push'ta Ubuntu (Python 3.9 ve 3.13), Windows ve resmî Pardus 25.1/25.2 kapsayıcılarında çalışır. 35 dakikalık uzun koşu ayrı bir iş akışındadır.</li>
 </ul>
 
 <!-- =============================== 11 =============================== -->
 <h2>11. Gerçek test sonuçları</h2>
-<div class="note">Ortam: Ubuntu 24.04.4 LTS, Linux 7.0.0-43-generic, x86-64, 16 mantıksal CPU, 15,3 GiB RAM, 4 GiB swap, PSI etkin.
-Tarih: 27 Kasım 2026. <b>Bu sonuçlar Pardus'a ait değildir.</b></div>
+<div class="note">Ortamlar ayrı tutulmuştur. "Pardus kapsayıcısı" sonuçları resmî Pardus Docker imajında
+çalışan CI'dan, "geliştirme makinesi" sonuçları Ubuntu 24.04'ten (Linux 7.0, 16 CPU) gelir. CI
+sonuçları iş günlükleri okunarak doğrulanmıştır. Tarih: 27 Kasım 2026.</div>
 <h3>11.1 Otomatik test koşuları</h3>
 <table>
-  <tr><th>Koşu</th><th>Ortam</th><th class="num">Geçti</th><th class="num">Başarısız</th><th class="num">Atlandı</th></tr>
-  <tr><td>Tam paket</td><td>Python 3.12.3, PySide6 6.12.0, psutil 7.2.2, pytest 9.2.0</td><td class="num ok">136</td><td class="num">0</td><td class="num">0</td></tr>
-  <tr><td>Debian 13 PySide6 sürümüyle uyumluluk</td><td>PySide6 6.8.2.1, psutil 5.9.8, pytest 8.3.5</td><td class="num ok">136</td><td class="num">0</td><td class="num">0</td></tr>
-  <tr><td>Bağımlılıksız Python</td><td>Sistem Python 3.12.3, psutil ve PySide6 yok</td><td class="num ok">121</td><td class="num">0</td><td class="num">7</td></tr>
-  <tr><td>Yalnız deterministik testler (<code>-m "not linux"</code>)</td><td>Tam paket ortamı</td><td class="num ok">130</td><td class="num">0</td><td class="num">6 seçilmedi</td></tr>
-  <tr><td>Statik denetim</td><td>ruff 0.15.17 (E, F, W, B) · mypy 2.4.1</td><td colspan="3" class="ok">ruff: sorun yok · mypy: 33 dosyada sorun yok</td></tr>
+  <tr><th>Ortam</th><th>Python / PySide6 / psutil</th><th>Sonuç</th><th>Kaynak</th></tr>
+  <tr><td><b>Resmî Pardus 25.1 kapsayıcısı</b> (root olmayan kullanıcı, bağımlılıklar Pardus deposundan)</td><td>3.13.5 / 6.8.2.1 / 7.0.0</td><td class="ok">316 geçti, 0 başarısız</td><td>CI 45783157502 (<code>main</code>, a718982)</td></tr>
+  <tr><td>Pardus 25.2 kapsayıcısı, Ubuntu py3.9/py3.13, Windows</td><td>—</td><td class="ok">Hepsi başarılı</td><td>CI 45783157502</td></tr>
+  <tr><td><b>Birleşmiş Aşama 2 dalı</b> (bütün CI işleri)</td><td>Pardus: 3.13.5 / 6.8.2.1 / 7.0.0</td><td class="ok">Hepsi başarılı. Pardus 25.1 ve 25.2: 326 geçti; kabul betiği 19 GEÇTİ, 0 KALDI. Ubuntu py3.9 ve py3.13: 326 geçti. Windows: 317 geçti, 9 atlandı</td><td>CI 45968920157 (4e5eb3b)</td></tr>
+  <tr><td>Geliştirme makinesi, son kod</td><td>3.12.3 / 6.12.0 / 7.2.2</td><td class="ok">329 geçti, 0 başarısız</td><td>yerel</td></tr>
+  <tr><td>Geliştirme makinesi, Debian 13 kütüphane sürümleri</td><td>3.12.3 / 6.8.2.1 / 5.9.8</td><td class="ok">326 geçti, 0 başarısız</td><td>yerel</td></tr>
+  <tr><td>Geliştirme makinesi, psutil ve PySide6 yok</td><td>3.12.3 / — / —</td><td class="ok">309 geçti, 9 atlandı</td><td>yerel</td></tr>
+  <tr><td>Statik denetim</td><td colspan="3">mypy 2.4.1: 34 dosyada sorun yok. ruff 0.15.17 (E, F, W, B): Aşama 2 dalının dosyalarında bulgu yok; <code>main</code>'den gelen dosyalarda 10 biçim bulgusu (9 satır uzunluğu, 1 kullanılmayan import)</td></tr>
 </table>
 <table>
   <tr><th>Test dosyası</th><th class="num">Test</th><th>Kapsam</th></tr>
   <tr><td><code>test_procfs.py</code></td><td class="num">13</td><td>/proc ayrıştırıcıları, eski çekirdek biçimleri, disk filtresi, salt-okunur açma</td></tr>
-  <tr><td><code>test_collectors.py</code></td><td class="num">12</td><td>psutil yedeği, kaynaksız çalışma, NoSuchProcess, AccessDenied, PermissionError, PID yeniden kullanımı</td></tr>
-  <tr><td><code>test_normalize_history.py</code></td><td class="num">13</td><td>CPU/swap/disk/minor fault hesapları, sayaç sıfırlanması, saat geri alma, 30 dk sınırı, eşzamanlılık</td></tr>
-  <tr><td><code>test_rules.py</code></td><td class="num">30</td><td>3 kural: pozitif, negatif, eşik sınırı, karşı-örnek, süreç kaynağı</td></tr>
-  <tr><td><code>test_engine.py</code></td><td class="num">8</td><td>Yaşam döngüsü, dalgalanma koruması, hata yalıtımı, deterministik yeniden analiz</td></tr>
-  <tr><td><code>test_scenarios_service.py</code></td><td class="num">17</td><td>8 senaryo uçtan uca, hatalı kaynakta <code>tick()</code>, ayar değişikliği, tampon kapasitesi</td></tr>
-  <tr><td><code>test_export.py</code></td><td class="num">13</td><td>CSV/JSON gidiş-dönüş, geçersiz rapor, atomik yazım, gizlilik, veri kaynağı ve birimler</td></tr>
-  <tr><td><code>test_cli_safety.py</code></td><td class="num">12</td><td>Komut satırı modu, sentetik etiket, metodoloji, AST güvenlik taraması</td></tr>
-  <tr><td><code>test_gui.py</code></td><td class="num">9</td><td>Pencere güncelleme, dışa aktarma, kayıt açma, donmama, açılış/kapanış, demo şeridi</td></tr>
+  <tr><td><code>test_collectors.py</code></td><td class="num">12</td><td>psutil yedeği, NoSuchProcess, AccessDenied, PermissionError, PID yeniden kullanımı</td></tr>
+  <tr><td><code>test_normalize_history.py</code></td><td class="num">13</td><td>CPU/swap/disk/minor fault, sayaç sıfırlanması, saat geri alma, 30 dk sınırı</td></tr>
+  <tr><td><code>test_windows.py</code></td><td class="num">19</td><td>Zaman pencereleri: sınırlar, düzensiz aralık, boşluk, veri yeterliliği</td></tr>
+  <tr><td><code>test_rules.py</code></td><td class="num">43</td><td>3 kural: pozitif, negatif, eşik sınırı, önem/güven, açıklama metinleri, süreç kaynağı</td></tr>
+  <tr><td><code>test_engine.py</code></td><td class="num">18</td><td>Yaşam döngüsü, yetersiz veride uyarının açık kalması, gözlenen aralık, günlük sınırı</td></tr>
+  <tr><td><code>test_config.py</code></td><td class="num">24</td><td>JSON ayar tür dönüşümü, aralık denetimleri</td></tr>
+  <tr><td><code>test_calibration.py</code></td><td class="num">11</td><td>Eşik kalibrasyonu</td></tr>
+  <tr><td><code>test_scenarios_service.py</code></td><td class="num">33</td><td>8 senaryo uçtan uca, kayıtlı dosyaların güncelliği, kayıt analizi, tampon kapasitesi</td></tr>
+  <tr><td><code>test_export.py</code></td><td class="num">13</td><td>CSV/JSON gidiş-dönüş, atomik yazım, gizlilik, veri kaynağı ve birimler</td></tr>
+  <tr><td><code>test_cli_safety.py</code></td><td class="num">42</td><td>Komut satırı modları, dışa aktarma hataları, sentetik etiket, AST güvenlik denetimi</td></tr>
+  <tr><td><code>test_packaging.py</code></td><td class="num">14</td><td><code>.deb</code> yapısı, izinler, yeniden üretilebilirlik, man sayfası</td></tr>
+  <tr><td><code>test_pardus_kabul.py</code></td><td class="num">55</td><td>Kabul betiğinin ayrıştırıcıları, gizlilik temizliği, rapor biçimi</td></tr>
+  <tr><td><code>test_gui.py</code></td><td class="num">10</td><td>Pencere, dışa aktarma, kayıt açma, donmama, açılış/kapanış, demo şeridi, ayar kutusu</td></tr>
   <tr><td><code>test_crosscheck_linux.py</code></td><td class="num">5</td><td>Canlı /proc ile psutil karşılaştırması (10'ar örnek)</td></tr>
   <tr><td><code>test_formatting.py</code></td><td class="num">4</td><td>Türkçe biçimlendirme, sentetik sayaçlar</td></tr>
-  <tr><th>Toplam</th><th class="num">136</th><th></th></tr>
+  <tr><th>Toplam</th><th class="num">329</th><th></th></tr>
 </table>
 <h3>11.2 Uçtan uca senaryo sonuçları</h3>
 <table>
@@ -379,8 +402,8 @@ Tarih: 27 Kasım 2026. <b>Bu sonuçlar Pardus'a ait değildir.</b></div>
   <tr><td>disk_steady (karşı-örnek)</td><td>900 sn</td><td>yok</td><td>yok</td><td class="ok">PASS</td></tr>
   <tr><td>normal</td><td>1200 sn</td><td>yok</td><td>yok</td><td class="ok">PASS</td></tr>
 </table>
-<h3>11.3 /proc – psutil doğrulama tablosu (10 örnek)</h3>
-<p class="small"><code>scripts/validate_metrics.py --rounds 10 --interval 1</code>. Aşama 1 başarı ölçütü: "en az 10 örnek karşılaştırma".</p>
+<h3>11.3 /proc – psutil doğrulaması (10 örnek)</h3>
+<p class="small"><code>scripts/validate_metrics.py --rounds 10 --interval 1</code>. Aşama 1 ölçütü: "en az 10 örnek karşılaştırma". Pardus kapsayıcısındaki tablo (CI) <code>docs/TEST_RAPORU.md</code> §2'dedir: MemTotal/SwapTotal eşit, bellek farkı 0, CPU % farkı ≤ 0,1 puan. Aşağıdaki tablo geliştirme makinesine aittir.</p>
 <table>
   <tr><th>#</th><th>MemTotal eşit</th><th class="num">MemAvailable farkı (MiB)</th><th>SwapTotal eşit</th><th class="num">Swap kullanılan farkı (MiB)</th><th class="num">CPU user farkı (sn)</th><th class="num">CPU % (/proc)</th><th class="num">CPU % (psutil)</th><th class="num">Disk okuma farkı (MiB)</th></tr>
   <tr><td>1</td><td>evet</td><td class="num">0,00</td><td>evet</td><td class="num">0,00</td><td class="num">0,00</td><td class="num">9,4</td><td class="num">9,5</td><td class="num">0,00</td></tr>
@@ -394,114 +417,124 @@ Tarih: 27 Kasım 2026. <b>Bu sonuçlar Pardus'a ait değildir.</b></div>
   <tr><td>9</td><td>evet</td><td class="num">0,00</td><td>evet</td><td class="num">0,00</td><td class="num">0,00</td><td class="num">7,5</td><td class="num">7,5</td><td class="num">0,00</td></tr>
   <tr><td>10</td><td>evet</td><td class="num">0,00</td><td>evet</td><td class="num">0,00</td><td class="num">0,00</td><td class="num">9,9</td><td class="num">9,9</td><td class="num">0,00</td></tr>
 </table>
-<p>En büyük CPU % farkı 0,1 puandır. İki kaynak aynı anda okunamadığı için bu fark okuma anlarının kaymasından gelir. MemTotal ve SwapTotal her örnekte birebir eşittir.</p>
 
 <!-- =============================== 12 =============================== -->
 <h2>12. Pardus doğrulaması</h2>
-<div class="note"><b>Durum: TEST EDİLMEDİ (NOT TESTED).</b> Bu rapordaki hiçbir sonuç Pardus üzerinde
-elde edilmemiştir.</div>
-<p><b>Neden yapılamadı:</b> Geliştirme Ubuntu 24.04 çalışan bir makinede yapıldı. Bu makinede
-Pardus ISO'su, sanal makinesi veya imajı bulunmuyordu. Resmî Pardus 25 Docker imajı
-(<code>pardus/yirmibes</code>, Debian 13 tabanlı) ile kısmi bir kullanıcı alanı testi planlandı.
-Ancak imajı indirme işlemi, geliştirmede kullanılan yapay zekâ aracının otomatik izin denetimi
-tarafından reddedildi ve bu engel aşılmaya çalışılmadı. Konteyner testi yapılsaydı bile ana
-makinenin çekirdeğini kullandığı ve XFCE içermediği için XFCE VM testinin yerini tutmazdı.</p>
-<p><b>Pardus'a yakınlık için yapılanlar:</b> (1) Debian 13 deposundaki PySide6 sürümü (6.8.2) ile
-tüm testler geçti (Bölüm 11.1). (2) Kurulum komutları Debian 13 paket adlarına göre hazırlandı:
-<code>python3-psutil</code>, <code>python3-pyside6.qtwidgets</code>. Pardus 25 sürüm notlarındaki
-paket sürümleri <code>deb13</code> ekini taşır.</p>
-<p><b>Yapılması gerekenler:</b> <code>PARDUS_VALIDATION.md</code> belgesi temiz bir Pardus 25.1 XFCE
-VM için kurulum komutlarını ve 30 maddelik kabul listesini içerir. <code>scripts/pardus_validate.sh</code>
-betiği otomatik kısmı tek komutla çalıştırıp sonuçları bir klasöre yazar: ortam, paket sürümleri,
-pytest, 10 örnekli doğrulama, 60 sn canlı izleme, GUI'siz ve GUI'li 60 sn performans, ekran
-görüntüleri. Ekip bu sonuçları teslimden önce bu bölüme eklemelidir:</p>
 <table>
-  <tr><th>Pardus kontrolü</th><th>Sonuç</th></tr>
-  <tr><td>Temiz kurulum ve bağımlılıklar (apt)</td><td class="na">NOT TESTED — ekip dolduracak</td></tr>
-  <tr><td>Standart kullanıcıyla GUI açılışı, canlı metrikler, grafik güncellemesi</td><td class="na">NOT TESTED — ekip dolduracak</td></tr>
-  <tr><td>Kurallar, demo modu, dışa aktarma</td><td class="na">NOT TESTED — ekip dolduracak</td></tr>
-  <tr><td>60 sn yanıt verebilirlik, CPU &lt; %5, RAM &lt; 200 MiB</td><td class="na">NOT TESTED — ekip dolduracak</td></tr>
-  <tr><td>Temiz kapanış</td><td class="na">NOT TESTED — ekip dolduracak</td></tr>
+  <tr><th>Katman</th><th>Durum</th></tr>
+  <tr><td>Resmî Pardus 25.1 Docker imajı (<code>pardus/yirmibes:1</code>): kullanıcı alanı, Pardus deposu, root olmayan kullanıcı</td><td class="ok">PASS (CI)</td></tr>
+  <tr><td>Resmî Pardus 25.2 Docker imajı (<code>pardus/yirmibes:latest</code>)</td><td class="ok">PASS (CI)</td></tr>
+  <tr><td>Pardus 25.1 imajında 35 dk uzun koşu</td><td class="ok">PASS (CI)</td></tr>
+  <tr><td><b>Temiz Pardus 25.1 XFCE sanal makinesi</b> (gerçek çekirdek ve masaüstü)</td><td class="na">NOT TESTED</td></tr>
 </table>
+<p><b>Kapsayıcıda doğrulananlar</b> (CI 45783157502, Pardus 25.1 işi; iş günlüğünden):</p>
+<ul>
+  <li>Bağımlılıklar Pardus deposundan kuruldu: <code>python3-pyside6.qtwidgets</code> 6.8.2.1-4, <code>python3-psutil</code> 7.0.0-2.</li>
+  <li>Test takımı root olmayan kullanıcıyla çalıştı ve <b>316 test geçti</b>.</li>
+  <li><code>.deb</code> paketi apt ile kurulup kaldırıldı.</li>
+  <li>Kabul betiği: <b>19 GEÇTİ, 0 KALDI</b>, 3 atlandı (grafik oturum gerektiren maddeler), 8 manuel, 1 bilgi (PSI).</li>
+  <li>Kabul betiğinin doğruladıkları:
+    <ul>
+      <li>paketlerin depoda bulunması, kurulum, menü kaydı (<code>desktop-file-validate</code>),</li>
+      <li>standart kullanıcıyla çalışma, /proc okuma hatası olmaması,</li>
+      <li>ağ bağlantısı kurulmaması, ev dizininde dosya oluşmaması,</li>
+      <li><code>free -b</code> ile bellek tutarlılığı, performans ve demo analizi.</li>
+    </ul>
+  </li>
+</ul>
+<p><b>Kapsayıcının sınırı:</b> Çekirdek GitHub sunucusuna aittir. PSI ve disk aygıtları
+Pardus çekirdeğinde farklı olabilir. Masaüstü oturumu yoktur; GUI testleri offscreen ve
+xvfb/xcb ile yapılır. Bu nedenle XFCE menüsü, koyu tema, gerçek pencere yöneticisinde
+performans ve gerçek kullanımla kalibrasyon için VM gerekir. Bu oturumda yapay zekâ aracının
+izin denetimi Pardus imajını yerel makineye indirmeyi reddetti. Kapsayıcı sonuçlarının tamamı
+ekibin CI iş akışından gelir.</p>
+<p><b>VM'de yapılacaklar</b> (<code>PARDUS_VALIDATION.md</code>, <code>docs/PARDUS_DOGRULAMA.md</code>):
+<code>python3 scripts/pardus_kabul.py --gui --kalibrasyon-suresi 1800 --kayit-klasoru docs/kayitlar --cikti docs/PARDUS_SONUCLARI.md</code>
+komutunu çalıştırmak ve raporun listelediği elle kontrolleri yapmak (menü, koyu tema, LibreOffice, olağan kullanımda yanlış pozitif).</p>
 
 <!-- =============================== 13 =============================== -->
 <h2>13. Performans değerlendirmesi</h2>
-<p><code>scripts/perf_check.py</code> ile canlı sistemde (~500 süreç), 2 sn örnekleme aralığıyla 60 saniye ölçüldü.
-CPU, sürecin kendi <code>os.times()</code> farkından, RSS ise <code>/proc/self/status</code> içindeki VmRSS'ten alındı.</p>
+<p><code>scripts/perf_check.py</code>, 2 sn örnekleme, 60 sn. CPU, sürecin kendi <code>os.times()</code>
+farkından, RSS ise <code>/proc/self/status</code> içindeki VmRSS değerinden alınır.</p>
 <table>
-  <tr><th>Mod</th><th class="num">Ortalama CPU (tek çekirdek = %100)</th><th class="num">Toplam kapasiteye göre</th><th class="num">RSS (en yüksek)</th><th class="num">Tur süresi medyan / maks</th><th>GUI olay döngüsü</th></tr>
-  <tr><td>GUI'siz (<code>--headless</code>)</td><td class="num">%2,03</td><td class="num">%0,13</td><td class="num">19,6 MiB</td><td class="num">41,7 / 52,1 ms</td><td>—</td></tr>
-  <tr><td>GUI + arka plan worker (offscreen)</td><td class="num">%4,09</td><td class="num">%0,26</td><td class="num">82,1 MiB</td><td class="num">43,7 / 65,1 ms</td><td>En uzun aralık 29 ms; 2993 kalp atışından hiçbiri 100 ms'yi aşmadı</td></tr>
+  <tr><th>Ortam</th><th>Mod</th><th class="num">Ortalama CPU (tek çekirdek = %100)</th><th class="num">RSS (en yüksek)</th><th>GUI olay döngüsü</th></tr>
+  <tr><td rowspan="2">Pardus 25.1 kapsayıcısı (CI, 4 vCPU, a718982)</td><td>GUI'siz</td><td class="num">%0,08</td><td class="num">17,9 MiB</td><td>—</td></tr>
+  <tr><td>GUI + worker (offscreen)</td><td class="num">%0,87</td><td class="num">75,1 MiB</td><td>En uzun aralık 23 ms; 2995 kalp atışından 0'ı 100 ms'yi aştı</td></tr>
+  <tr><td rowspan="2">Pardus 25.1 kapsayıcısı (CI, birleşmiş dal 4e5eb3b)</td><td>GUI'siz</td><td class="num">%0,10</td><td class="num">18,6 MiB</td><td>—</td></tr>
+  <tr><td>GUI + worker (offscreen)</td><td class="num">%0,93</td><td class="num">75,1 MiB</td><td>En uzun aralık 25 ms; 3015 kalp atışından 0'ı 100 ms'yi aştı</td></tr>
+  <tr><td>Pardus 25.1 kapsayıcısı, 35 dk uzun koşu (6001693)</td><td>GUI'siz canlı</td><td class="num">—</td><td class="num">53,0 → 53,1 MiB</td><td>Tampon en çok 901 örnek (kapasite 1801), 30 dk sınırında sabit</td></tr>
+  <tr><td rowspan="2">Geliştirme makinesi (~500 süreç, 16 CPU)</td><td>GUI'siz</td><td class="num">%1,75</td><td class="num">19,7 MiB</td><td>—</td></tr>
+  <tr><td>GUI + worker (offscreen)</td><td class="num">%3,15</td><td class="num">82,2 MiB</td><td>En uzun aralık 27 ms; 2999 kalp atışından 0'ı 100 ms'yi aştı</td></tr>
 </table>
 <table>
-  <tr><th>Aşama 1 hedefi</th><th>Geliştirme makinesinde</th><th>Pardus VM'de</th></tr>
-  <tr><td>Varsayılan örnekleme 2 sn</td><td class="ok">Sağlandı</td><td class="na">NOT TESTED</td></tr>
-  <tr><td>Geçmiş tamponu 30 dk ile sınırlı, sınırsız büyüme yok</td><td class="ok">Sağlandı (birim testi: 2000 örnek → 901). 60 sn'de RSS sabit</td><td class="na">NOT TESTED (35 dk koşu gerekli)</td></tr>
-  <tr><td>60 sn çalışmada GUI yanıt veriyor</td><td class="ok">Sağlandı</td><td class="na">NOT TESTED</td></tr>
-  <tr><td>Ortalama CPU &lt; %5</td><td class="ok">Sağlandı (%4,09, tek çekirdek ölçeği; sınıra yakın)</td><td class="na">NOT TESTED</td></tr>
-  <tr><td>RAM &lt; 200 MiB</td><td class="ok">Sağlandı (82 MiB)</td><td class="na">NOT TESTED</td></tr>
+  <tr><th>Aşama 1 hedefi</th><th>Pardus kapsayıcısı</th><th>Geliştirme makinesi</th><th>Pardus XFCE VM</th></tr>
+  <tr><td>Varsayılan örnekleme 2 sn</td><td class="ok">Sağlandı</td><td class="ok">Sağlandı</td><td class="na">NOT TESTED</td></tr>
+  <tr><td>30 dk sınırlı tampon, sınırsız büyüme yok</td><td class="ok">Sağlandı (35 dk)</td><td class="ok">Sağlandı (birim testi)</td><td class="na">NOT TESTED</td></tr>
+  <tr><td>60 sn yanıt veren arayüz</td><td class="ok">Sağlandı</td><td class="ok">Sağlandı</td><td class="na">NOT TESTED</td></tr>
+  <tr><td>Ortalama CPU &lt; %5</td><td class="ok">Sağlandı</td><td class="ok">Sağlandı</td><td class="na">NOT TESTED</td></tr>
+  <tr><td>RAM &lt; 200 MiB</td><td class="ok">Sağlandı</td><td class="ok">Sağlandı</td><td class="na">NOT TESTED</td></tr>
 </table>
-<p>GUI ölçümüne, ölçüm betiğinin kendi 50 Hz kalp atışı zamanlayıcısı da dahildir. CPU maliyetinin
-büyük kısmı süreç taramasıdır (~500 süreçte 40–60 ms/tur). Daha az sürecin çalıştığı bir VM'de
-daha düşük olması beklenir, ancak bu ölçülmedi. Gerekirse <i>Ayarlar → Süreç listesi sıklığı = 2</i>
-ayarı bu maliyeti yarıya indirir. Ölçümler offscreen render ile alındı. Gerçek XFCE
-oturumundaki çizim maliyeti Pardus'ta ölçülmelidir.</p>
+<p>Maliyetin büyük kısmı süreç taramasıdır. Kapsayıcıda süreç sayısı çok az olduğundan CPU
+değerleri düşüktür. Geliştirme makinesindeki ilk GUI ölçümü %5,04 idi. Süreç tablosunun
+sıralaması model içine taşındı ve gizli sekmeler güncellenmez hâle getirildi; ölçüm %3,15'e
+indi. Gerçek XFCE oturumundaki çizim maliyeti VM'de ölçülmelidir.</p>
 
 <!-- =============================== 14 =============================== -->
 <h2>14. Güvenlik ve salt-okunur çalışma</h2>
 <table>
   <tr><th>İlke</th><th>Uygulama</th><th>Denetim</th></tr>
-  <tr><td>Root yetkisi istenmez</td><td>Hiçbir işlev root gerektirmez. Root ile başlatılırsa yalnızca bilgi uyarısı verilir</td><td><code>test_root_warning_is_informational</code></td></tr>
-  <tr><td>Sistem ayarı değiştirilmez, sistem dosyasına yazılmaz</td><td><code>/proc</code> ve <code>/sys</code> yalnızca <code>"r"</code> kipinde açılır</td><td>AST taraması + çalışma zamanında <code>open</code> kip izleme testi</td></tr>
-  <tr><td>Süreçlere sinyal gönderilmez</td><td>kill/terminate/suspend/nice/affinity çağrısı yoktur</td><td>AST taraması (<code>test_no_process_control_or_destructive_calls</code>)</td></tr>
-  <tr><td>Kabuk komutu çalıştırılmaz, ağ bağlantısı kurulmaz</td><td>subprocess, socket, urllib, http, requests, ctypes, signal modülleri kullanılmaz</td><td><code>test_no_dangerous_modules_are_imported</code></td></tr>
-  <tr><td>Veri yalnızca kullanıcı isteğiyle dışa aktarılır</td><td>Varsayılan konum ev dizini. Kullanıcı yolu seçer. Atomik yazım ve 0600 izinleri</td><td><code>test_no_files_are_written_without_explicit_export</code></td></tr>
-  <tr><td>Kişisel veri sızmaz</td><td>Raporlarda kullanıcı adı ve makine adı yoktur</td><td><code>test_report_does_not_contain_user_or_host_name</code></td></tr>
-  <tr><td>Bellek sınırlı</td><td>30 dk yaş sınırı + sabit kapasite. Uyarı günlüğü 200 kayıt</td><td>Tampon testleri</td></tr>
+  <tr><td>Root yetkisi istenmez</td><td>Hiçbir işlev root gerektirmez. Root ile başlatılırsa yalnızca bilgi uyarısı verilir</td><td>Test; Pardus kapsayıcısında tüm takım root olmayan kullanıcıyla çalışır</td></tr>
+  <tr><td>Sistem ayarı değiştirilmez, sistem dosyasına yazılmaz</td><td><code>/proc</code> ve <code>/sys</code> yalnızca <code>"r"</code> kipinde açılır. <code>QSettings</code> ile kalıcı ayar yazılmaz</td><td>AST taraması (<code>open</code> kipleri, <code>Path.write_*</code>, <code>os.open</code>, geçici dosyalar) + çalışma zamanında kip izleme</td></tr>
+  <tr><td>Süreçlere sinyal gönderilmez</td><td>kill/terminate/nice/affinity/exec* çağrısı yoktur</td><td>AST taraması; dolaylı biçimler de yakalanır (<code>from os import kill</code>, <code>getattr(p, "kill")()</code>)</td></tr>
+  <tr><td>Kabuk komutu çalıştırılmaz, ağ bağlantısı kurulmaz</td><td>subprocess, socket, urllib, http, QtNetwork vb. kullanılmaz</td><td>AST taraması; kabul betiği çalışma sırasında bağlantı olmadığını doğrular</td></tr>
+  <tr><td>Veri yalnızca kullanıcı isteğiyle dışa aktarılır</td><td>Yol kullanıcı tarafından seçilir. Atomik yazım, 0600 izinleri. Hedef klasör izlemeden önce denetlenir</td><td>Testler; kabul betiği ev dizininde dosya oluşmadığını doğrular</td></tr>
+  <tr><td>Kişisel veri sızmaz</td><td>Raporlarda kullanıcı adı ve makine adı yoktur</td><td>Test</td></tr>
+  <tr><td>Bellek sınırlı</td><td>30 dk yaş sınırı + sabit kapasite; uyarı günlüğü 200 kayıt</td><td>Birim testleri + 35 dk uzun koşu</td></tr>
   <tr><td>Sentetik veri gerçek sanılmaz</td><td>Şerit, <code>data_source</code>, <code>is_synthetic</code>, <code>[SENTETİK]</code></td><td>GUI, dışa aktarma ve komut satırı testleri</td></tr>
 </table>
-<p class="small">Not: Geliştirici betiği <code>scripts/build_submission.py</code>, teslim paketini oluşturmak için yalnızca
-<code>git ls-files</code> çalıştırır. Bu betik uygulamanın parçası değildir ve güvenlik taraması uygulama paketini (<code>pardusinsight/</code>) kapsar.</p>
+<p class="small">Uygulama paketi (<code>pardusinsight/</code>) bu denetimin kapsamındadır. Geliştirici betikleri ayrıdır:
+<code>scripts/build_submission.py</code> yalnızca <code>git ls-files</code> çalıştırır,
+<code>scripts/build_deb.py</code> ise paket üretir. Bu betikler uygulamanın parçası değildir.</p>
 
 <!-- =============================== 15 =============================== -->
 <h2>15. Grup üyelerinin katkıları</h2>
-<div class="note"><b>Önemli:</b> Aşağıdaki "planlanan sorumluluk" sütunu Aşama 1 önerisindeki iş
-bölümüdür ve <b>gerçekleşmiş katkı olarak sunulmamaktadır</b>. Bu sürümün kodu, belgeleri ve
-testleri yapay zekâ desteğiyle üretilmiştir (Bölüm 18). Git geçmişindeki commit'ler depoyu
-oluşturan üyenin kimliğiyle atılmış ve her commit mesajında modülün planlanan sorumlusu
-belirtilmiştir. Diğer üyeler adına commit atılmamıştır. <b>Her üyenin gerçekleştirdiği
-geliştirme, test ve doğrulama görevleri teslimden önce ekip tarafından doldurulmalıdır.</b></div>
+<div class="note"><b>Önemli:</b> "Planlanan sorumluluk" sütunu Aşama 1 iş bölümüdür. "Git
+kayıtlarında görünen" sütunu yalnızca depodaki commit'lerden çıkarılmıştır. Kod incelemesi,
+Pardus VM testi, video ve sunum gibi commit dışı katkılar bu sütunda görünmez. Her üye kendi
+satırını teslimden önce <b>doğrulamalı ve tamamlamalıdır</b>. Yapay zekâ kullanımı Bölüm 18'dedir.</div>
 <table>
-  <tr><th style="width:18%">Üye</th><th style="width:36%">Planlanan sorumluluk (Aşama 1)</th><th style="width:30%">Gerçekleşen katkı</th><th style="width:16%">Doğrulama</th></tr>
-  <tr><td>Eren Can Dönertaş</td><td>Metrik toplama, normalizasyon ve tampon: <code>collectors/</code>, <code>core/</code>. Metrik doğrulama, performans, uyumluluk</td><td class="na">[EKİP DOLDURACAK]</td><td class="na">Doğrulanmadı</td></tr>
-  <tr><td>Yusuf Yankı Ütgün</td><td>Masaüstü arayüzü, grafikler ve raporlama: <code>ui/</code>, <code>export/</code>. Uyarı kartları, kullanıcı rehberi, demo</td><td class="na">[EKİP DOLDURACAK]</td><td class="na">Doğrulanmadı</td></tr>
-  <tr><td>Oğuz Giray Bori</td><td>Analiz motoru, test otomasyonu ve paketleme: <code>analysis/</code>, <code>tests/</code>, <code>scripts/</code>. Pardus VM, test raporu</td><td class="na">[EKİP DOLDURACAK]</td><td class="na">Doğrulanmadı</td></tr>
+  <tr><th style="width:15%">Üye</th><th style="width:27%">Planlanan sorumluluk (Aşama 1)</th><th style="width:40%">Git kayıtlarında görünen (27.11.2026)</th><th style="width:18%">Doğrulama</th></tr>
+  <tr><td>Eren Can Dönertaş</td><td>Metrik toplama, normalizasyon ve tampon (<code>collectors/</code>, <code>core/</code>); metrik doğrulama, performans</td><td>23 commit: deponun oluşturulması; ilk sürümün tamamı ve Aşama 2 teslim hazırlığı (Claude Code ile). Teslim hazırlığı ölçüm eklemelerini, demo etiketini, metodoloji ekranını, performans iyileştirmelerini, belgeleri, teknik raporu ve teslim paketini kapsar</td><td class="na">Eren doğrulamalı; commit dışı katkılar eklenmeli</td></tr>
+  <tr><td>Yusuf Yankı Ütgün</td><td>Masaüstü arayüzü, grafikler ve raporlama (<code>ui/</code>, <code>export/</code>); uyarı kartları, kullanıcı rehberi, demo</td><td>Depoda commit yok</td><td class="na">[EKİP DOLDURACAK]</td></tr>
+  <tr><td>Oğuz Giray Bori</td><td>Analiz motoru, test otomasyonu ve paketleme (<code>analysis/</code>, <code>tests/</code>, <code>scripts/</code>); Pardus VM, test raporu</td><td>22 commit (Claude Code destekli, kendi beyanıyla):
+    <ul>
+      <li><code>.deb</code> paketi, menü kaydı, simge, man sayfası;</li>
+      <li>resmî Pardus 25.1/25.2 kapsayıcısında CI ve 35 dk uzun koşu;</li>
+      <li><code>pardus_kabul.py</code>, kalibrasyon aracı;</li>
+      <li>kural/motor düzeltmeleri (yetersiz veri, gözlenen aralık, önem derecesi);</li>
+      <li>zaman penceresi, kural, ayar ve mutasyon testleri;</li>
+      <li>başka modüllerdeki üç hatanın bildirilmesi; test raporu ve Pardus doğrulama listesi.</li>
+    </ul></td><td class="na">Oğuz doğrulamalı</td></tr>
 </table>
-<p>Teslimden önce yapılması önerilen ve her üyenin kendi commit'iyle kaydedilecek işler:
-Pardus doğrulaması ve kalibrasyon, XFCE'de arayüz kontrolü, demo videosu, bu tablonun
-doldurulması. Ayrıntılar <code>docs/GOREV_DAGILIMI.md</code> belgesindedir.</p>
 
 <!-- =============================== 16 =============================== -->
 <h2>16. Bilinen kısıtlar ve geliştirme önerileri</h2>
 <h3>16.1 Bilinen kısıtlar</h3>
 <ul>
-  <li><b>Pardus 25.1 XFCE üzerinde test edilmedi</b> (Bölüm 12). Performans ve görünüm Pardus'ta doğrulanmalı.</li>
-  <li>Eşikler sentetik senaryolara göre seçildi. Hedef ortamda <b>kalibre edilmedi</b>. Olağan kullanımda yanlış pozitif oranı ölçülmedi.</li>
+  <li><b>Temiz Pardus 25.1 XFCE VM'de doğrulanmadı</b> (Bölüm 12). Kapsayıcı testleri gerçek çekirdeği ve masaüstünü kapsamaz.</li>
+  <li>Eşikler gerçek kullanım verisiyle <b>kalibre edilmedi</b>. Araç hazırdır, 30 dk VM kaydı gerekir.</li>
   <li>Standart kullanıcı, başka kullanıcılara ait süreçlerin G/Ç sayaçlarını okuyamaz. Disk kuralının süreç bağlamı bu yüzden eksik olabilir.</li>
-  <li>Süreç değerleri örnekleme anlarına aittir. 2 saniyeden kısa yaşayan süreçler görünmeyebilir.</li>
-  <li>RSS paylaşılan belleği birden fazla kez sayabilir (PSS/USS kullanılmadı).</li>
+  <li>Süreç değerleri örnekleme anlarına aittir; 2 saniyeden kısa yaşayan süreçler görünmeyebilir.</li>
+  <li>RSS paylaşılan belleği birden fazla sayabilir (PSS/USS kullanılmadı).</li>
   <li>Disk meşguliyeti (%util) NVMe/SSD'de doygunluğu abartabilir. Disk kuralı bu yüzden yalnızca gözlem üretir.</li>
-  <li>PSI kapalı çekirdeklerde bellek kuralı swap ve page-fault göstergeleriyle sınırlı kalır.</li>
-  <li>Ayarlar oturum boyunca geçerlidir. Kalıcı ayar dosyası yalnızca <code>--config</code> ile okunur, uygulama ayar yazmaz.</li>
-  <li>Tek çekirdekli sistemlerde süreç taraması, CPU hedefinin daha büyük bir payını tüketebilir (ölçülmedi).</li>
-  <li>Demo videosu henüz çekilmedi. <code>VIDEO_LINK.txt</code> bekleme durumundadır.</li>
+  <li>PSI'si kapalı çekirdeklerde bellek kuralı swap ve page-fault göstergeleriyle sınırlı kalır.</li>
+  <li>Demo videosu henüz çekilmedi (<code>VIDEO_LINK.txt</code> bekleme durumunda).</li>
 </ul>
 <h3>16.2 Geliştirme önerileri</h3>
 <ul>
-  <li>Pardus'ta 30 dakikalık olağan kullanım kayıtlarıyla eşik kalibrasyonu ve yanlış pozitif ölçümü</li>
+  <li>VM'de 30 dk olağan kullanım kayıtlarıyla kalibrasyon ve yanlış pozitif ölçümü</li>
   <li>cgroup v2 (<code>memory.pressure</code>, <code>cpu.stat</code>) ile oturum veya uygulama bazında baskı analizi</li>
   <li>Süreç bazında PSS (<code>/proc/&lt;pid&gt;/smaps_rollup</code>) ile daha doğru bellek bağlamı</li>
-  <li>Pardus için <code>.deb</code> paketi ve masaüstü simgesi</li>
   <li>Ağ arayüzü sayaçları (<code>/proc/net/dev</code>, yalnızca okuma) ve sıcaklık (<code>/sys/class/thermal</code>)</li>
   <li>GNOME/Wayland uyumluluk raporu (Aşama 1'deki ek hedef)</li>
 </ul>
@@ -521,6 +554,7 @@ doldurulması. Ayrıntılar <code>docs/GOREV_DAGILIMI.md</code> belgesindedir.</
   <li>Debian 13 (trixie) paketi <i>python3-pyside6.qtwidgets</i>: https://packages.debian.org/trixie/python3-pyside6.qtwidgets</li>
   <li>Pardus 25.1 sürüm notları: https://pardus.org.tr/pardus-25-1-surum-notlari</li>
   <li>Pardus Docker Hub organizasyonu (pardus/yirmibes): https://hub.docker.com/r/pardus/yirmibes</li>
+  <li>GitHub Actions iş akışları ve koşu kayıtları: https://github.com/Eren-Can-Donertas/PardusInsight/actions</li>
   <li>htop (GPL-2.0-or-later), yalnızca işlevsel karşılaştırma için: https://github.com/htop-dev/htop</li>
 </ol>
 
@@ -530,17 +564,23 @@ doldurulması. Ayrıntılar <code>docs/GOREV_DAGILIMI.md</code> belgesindedir.</
 ister. Bu projede yapay zekâ şu şekilde kullanılmıştır:</p>
 <ul>
   <li><b>Aşama 1:</b> Öneri metninin taslağı, planlama, dil kontrolü ve test senaryolarının yapılandırılması.</li>
-  <li><b>Aşama 2:</b> Uygulamanın bu sürümü, ekibin onaylanan Aşama 1 önerisi ve Aşama 2 yönergesi girdi olarak
-  verilerek <b>Anthropic Claude (Claude Code)</b> ile üretilmiştir. Yapay zekânın katkısı mimari taslak,
-  bütün modüllerin kodu, kural eşiklerinin ilk değerleri, otomatik testler, sentetik senaryolar,
-  ölçüm betikleri, belgeler ve bu raporun taslağıdır. Testler ve ölçümler araç tarafından gerçekten
-  çalıştırılmış, çıktıları bu rapora olduğu gibi aktarılmıştır. Pardus testi yapılamadığı açıkça belirtilmiştir.</li>
+  <li><b>İlk sürüm ve Aşama 2 teslim hazırlığı:</b> Ekibin onaylanan Aşama 1 önerisi ve Aşama 2 yönergesi
+  girdi olarak verilerek <b>Anthropic Claude (Claude Code)</b> ile üretilmiştir. Yapay zekânın katkısı
+  mimari taslak, modüllerin ilk kodu, kural eşiklerinin ilk değerleri, otomatik testler, sentetik
+  senaryolar, ölçüm betikleri, Aşama 2 eklemeleri, belgeler ve bu raporun taslağıdır. Testler ve
+  ölçümler gerçekten çalıştırılmış, çıktıları olduğu gibi aktarılmıştır. CI sonuçları iş günlükleri
+  okunarak doğrulanmıştır. XFCE VM testinin yapılmadığı açıkça belirtilmiştir.</li>
   <li><b>Ekibin sorumluluğu:</b> Her üye teslim edilen kodu, teknik tercihleri ve çalışma ilkelerini
-  anlayıp açıklayabilmelidir. Bunun için <code>ORAL_EXAM_PREP.md</code> hazırlanmıştır. Pardus
-  doğrulaması, eşik kalibrasyonu, demo videosu ve Bölüm 15'teki katkı tablosu ekip tarafından
-  tamamlanmalıdır.</li>
+  anlayıp açıklayabilmelidir. Bunun için <code>ORAL_EXAM_PREP.md</code> hazırlanmıştır. XFCE VM
+  doğrulaması, gerçek kullanımla eşik kalibrasyonu, demo videosu ve Bölüm 15'teki katkı tablosu
+  ekip tarafından tamamlanmalıdır.</li>
   <li>Hazır bir proje kopyalanmamıştır. Açık kaynak bileşenler yalnızca lisanslarına uygun biçimde
   bağımlılık olarak kullanılmıştır (<code>THIRD_PARTY_NOTICES.md</code>).</li>
+  <li><b>Oğuz'un görevleri</b> (kendi beyanı, README): Paketleme (<code>.deb</code>), sürekli entegrasyon (resmî
+  Pardus 25.1 kapsayıcısı dahil), eşik kalibrasyon aracı, Pardus kabul betiği, zaman penceresi ve kural
+  testleri ile kod incelemesinde bulunan hataların düzeltilmesi de <b>Claude Code</b> desteğiyle yapılmıştır.
+  Her bulgu kod çalıştırılarak yeniden üretilmiş ve bağımsız olarak doğrulanmıştır. Düzeltmeler, eski kodda
+  başarısız olan regresyon testleriyle commit'lenmiştir.</li>
 </ul>
 
 </body>

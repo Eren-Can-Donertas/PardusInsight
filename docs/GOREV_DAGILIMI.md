@@ -54,8 +54,9 @@ Her üyenin katkısının Git kayıtlarında görünmesi için önerilen akış:
 
 ## Teslim öncesi: gerçekleşen katkıların kaydı
 
-Teknik raporun 15. bölümündeki "Gerçekleşen katkı" sütunu boş ve "[EKİP DOLDURACAK]" olarak
-işaretlidir. Her üye kendi satırını gerçekten yaptığı işlerle doldurmalıdır: incelediği veya
-değiştirdiği modüller, Pardus'ta yaptığı testler, videodaki bölümü. Ardından
-`report/technical_report.html` düzenlenir ve `sh report/build_pdf.sh` ile PDF yeniden üretilir.
-Aşama 1 planı gerçekleşmiş katkı olarak sunulmamalıdır.
+Teknik raporun 15. bölümündeki tabloda yalnızca Git kayıtlarında görünen katkılar yazılıdır.
+Oğuz'un 22 commit'i ve Eren'in kimliğiyle atılan, yapay zekâ destekli ilk sürüm ve Aşama 2
+commit'leri orada yer alır. Yusuf'un commit'i yoktur. Commit dışı katkılar Git'te görünmez:
+kod incelemesi, Pardus VM testi, video, sunum. Her üye kendi satırını doğrulayıp
+tamamlamalıdır. Ardından `report/technical_report.html` düzenlenir ve `sh report/build_pdf.sh`
+ile PDF yeniden üretilir. Aşama 1 planı gerçekleşmiş katkı olarak sunulmamalıdır.
